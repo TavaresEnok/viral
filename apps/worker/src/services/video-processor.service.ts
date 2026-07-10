@@ -3,7 +3,7 @@ import { LlmClipAnalyzerService, type LlmTelemetry } from "@viralforge/clip-anal
 import type { QueueJobPayload } from "@viralforge/shared";
 import { resolve } from "node:path";
 import { performance } from "node:perf_hooks";
-import { computeClipTarget, type RenderClipsSummary, type TranscriptWithMetadata } from "../types/pipeline.types.js";
+import { aiFallbackAllowed, computeClipTarget, type RenderClipsSummary, type TranscriptWithMetadata } from "../types/pipeline.types.js";
 import { ApiKeyService } from "./api-key.service.js";
 import { ClipPersistenceService } from "./clip-persistence.service.js";
 import { ClipValidationService } from "./clip-validation.service.js";
@@ -220,6 +220,11 @@ export class VideoProcessorService {
             );
 
             currentStage = "ANALYZING_CLIPS";
+            if (!keys.llmApiKey && !aiFallbackAllowed()) {
+                throw new Error(
+                    "Nenhum provider de IA configurado e ALLOW_AI_FALLBACK=false. Configure o modelo global em /admin/ai antes de processar.",
+                );
+            }
             log("Analisando cortes com IA", { stage: "ANALYZING_CLIPS" });
             await this.metrics.stage(payload.projectId, "ANALYZING_CLIPS", 50);
             const analyzer = new LlmClipAnalyzerService({
@@ -265,6 +270,12 @@ export class VideoProcessorService {
             }
 
             if (!validatedClips.length) {
+                if (!aiFallbackAllowed()) {
+                    throw new Error(
+                        `A IA (${keys.llmModel}) não produziu cortes válidos e o fallback está desativado (ALLOW_AI_FALLBACK=false). ` +
+                            "Verifique o modelo configurado em /admin/ai e reprocesse o projeto.",
+                    );
+                }
                 log(
                     `Analisador retornou ${rawClips.length} corte(s), mas nenhum passou na validação. Usando fallback operacional.`,
                     { stage: "ANALYZING_CLIPS", rawClipCount: rawClips.length },

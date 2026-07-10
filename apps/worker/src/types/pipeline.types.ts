@@ -96,6 +96,16 @@ export function positiveInt(value: string | undefined, fallback: number): number
     return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
 }
 
+/**
+ * ALLOW_AI_FALLBACK=false faz o pipeline FALHAR com mensagem acionável quando
+ * a IA não produz cortes válidos, em vez de gerar cortes sintéticos
+ * silenciosamente. Padrão: permitido (comportamento histórico) — recomendado
+ * desligar em produção depois que o modelo do /admin/ai estiver validado.
+ */
+export function aiFallbackAllowed(env: NodeJS.ProcessEnv = process.env): boolean {
+    return (env.ALLOW_AI_FALLBACK ?? "true").trim().toLowerCase() !== "false";
+}
+
 export const CLIP_TARGET_FLOOR = 5;
 export const CLIP_TARGET_CEIL = 20;
 /** ~1 corte a cada 3,5 min. */

@@ -17,6 +17,10 @@ import {
   signOAuthState,
 } from '@viralforge/shared';
 
+// Categorias atribuídas pelo worker a clips gerados sem curadoria da IA
+// (fallback operacional e modo offline). Ver clip-persistence.service.ts.
+export const DEGRADED_CLIP_CATEGORIES = new Set(['fallback-review', 'offline-preview']);
+
 const YOUTUBE_SCOPES = ['https://www.googleapis.com/auth/youtube.upload', 'https://www.googleapis.com/auth/youtube.readonly'];
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
@@ -127,6 +131,14 @@ export class PublishService {
     }
     if (parsedSchedule && parsedSchedule <= new Date()) {
       throw new BadRequestException('Data de agendamento precisa ser futura');
+    }
+    // Clips de modo degradado (fallback sem curadoria da IA) não podem ser
+    // agendados: agendar é publicar sem olhar. Publicação imediata segue
+    // permitida — o usuário está revisando o clip naquele momento.
+    if (parsedSchedule && DEGRADED_CLIP_CATEGORIES.has(clip.category)) {
+      throw new BadRequestException(
+        'Este corte foi gerado em modo degradado (a IA não produziu cortes válidos). Revise e publique manualmente, ou reprocesse o projeto antes de agendar.',
+      );
     }
 
     const published = await this.prisma.publishedClip.create({

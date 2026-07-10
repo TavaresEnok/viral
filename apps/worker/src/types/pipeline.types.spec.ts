@@ -1,5 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { computeClipTarget, CLIP_TARGET_FLOOR, CLIP_TARGET_CEIL } from './pipeline.types.js';
+import { aiFallbackAllowed, computeClipTarget, CLIP_TARGET_FLOOR, CLIP_TARGET_CEIL } from './pipeline.types.js';
+
+describe('aiFallbackAllowed', () => {
+  it('permite fallback por padrão (env ausente)', () => {
+    expect(aiFallbackAllowed({} as NodeJS.ProcessEnv)).toBe(true);
+  });
+
+  it('desliga fallback com ALLOW_AI_FALLBACK=false (case/espaco-insensivel)', () => {
+    expect(aiFallbackAllowed({ ALLOW_AI_FALLBACK: 'false' } as NodeJS.ProcessEnv)).toBe(false);
+    expect(aiFallbackAllowed({ ALLOW_AI_FALLBACK: ' FALSE ' } as NodeJS.ProcessEnv)).toBe(false);
+  });
+
+  it('qualquer outro valor mantém fallback ligado', () => {
+    expect(aiFallbackAllowed({ ALLOW_AI_FALLBACK: 'true' } as NodeJS.ProcessEnv)).toBe(true);
+    expect(aiFallbackAllowed({ ALLOW_AI_FALLBACK: '0' } as NodeJS.ProcessEnv)).toBe(true);
+  });
+});
 
 describe('computeClipTarget', () => {
   it('mantém piso de 5 em vídeos curtos (sem regressão)', () => {
