@@ -1,0 +1,23 @@
+[Unit]
+StartLimitIntervalSec=300
+StartLimitBurst=5
+Description=ViralForge API
+After=network.target docker.service
+Wants=network.target
+
+[Service]
+Type=simple
+User=ia
+# Roda o build (dist) diretamente — estável e rápido. NÃO usa `pnpm dev:api`,
+# que rebuilda + tsc a cada start (frágil: um erro de tsc derrubava o serviço).
+# Faça o build no deploy: `corepack pnpm --filter @viralforge/api build`.
+WorkingDirectory=/home/ia/Documents/projetos/ViralForge/apps/api
+Environment=PATH=/home/ia/.nvm/versions/node/v20.20.2/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/home/ia/.nvm/versions/node/v20.20.2/bin/node --env-file=/home/ia/Documents/projetos/ViralForge/.env dist/apps/api/src/main.js
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,60 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: modulo-ia-postgres
+    environment:
+      POSTGRES_USER: viralforge
+      POSTGRES_PASSWORD: viralforge
+      POSTGRES_DB: viralforge
+    ports:
+      - '127.0.0.1:5432:5432'
+    volumes:
+      - modulo_ia_postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U viralforge -d viralforge']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: modulo-ia-redis
+    ports:
+      - '127.0.0.1:6379:6379'
+    volumes:
+      - modulo_ia_redis_data:/data
+    command: redis-server --save 60 1 --loglevel warning
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    container_name: modulo-ia-minio
+    command: server /data --console-address ':9001'
+    environment:
+      MINIO_ROOT_USER: viralforge
+      MINIO_ROOT_PASSWORD: viralforge123
+    ports:
+      - '127.0.0.1:9000:9000'
+      - '127.0.0.1:9001:9001'
+    volumes:
+      - modulo_ia_minio_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  modulo_ia_postgres_data:
+    external: true
+  modulo_ia_redis_data:
+    external: true
+  modulo_ia_minio_data:
+    external: true

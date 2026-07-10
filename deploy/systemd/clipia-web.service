@@ -1,0 +1,25 @@
+[Unit]
+StartLimitIntervalSec=300
+StartLimitBurst=5
+Description=ViralForge Web
+After=network.target viralforge-api.service
+Wants=network.target
+
+[Service]
+Type=simple
+User=ia
+# Roda o build de produção (`next start`), NÃO `next dev`. Estável e leve.
+# Faça o build no deploy: `corepack pnpm --filter @viralforge/web build`.
+# Lembrete: NEXT_PUBLIC_* é embutido no build — rebuild ao mudar a API URL.
+WorkingDirectory=/home/ia/Documents/projetos/ViralForge
+Environment=PATH=/home/ia/.nvm/versions/node/v20.20.2/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=WEB_PORT=3002
+Environment=WEB_HOST=0.0.0.0
+ExecStart=/home/ia/.nvm/versions/node/v20.20.2/bin/corepack pnpm --filter @viralforge/web start
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

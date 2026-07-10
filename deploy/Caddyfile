@@ -1,0 +1,41 @@
+# Caddy como reverse proxy TLS na frente do ViralForge.
+# HTTPS automático via Let's Encrypt — requer um domínio com DNS A apontando
+# para este servidor (168.194.15.42) e as portas 80/443 liberadas no firewall
+# externo. Substitua SEU_DOMINIO abaixo antes de usar.
+#
+# Instalação (Ubuntu):
+#   sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
+#   curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+#   curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+#   sudo apt update && sudo apt install caddy
+#   sudo cp deploy/Caddyfile /etc/caddy/Caddyfile && sudo systemctl reload caddy
+#
+# Depois de validar o HTTPS:
+#   1. Bloquear 3001/3002 no firewall externo (o Caddy passa a ser a única porta de entrada).
+#   2. Trocar WEB_ORIGIN no .env para https://SEU_DOMINIO e rebuildar/reiniciar api+web.
+#   3. O app mobile (Capacitor) passa a funcionar — exigia HTTPS.
+
+SEU_DOMINIO {
+	encode gzip
+
+	# API NestJS — o web usa NEXT_PUBLIC_API_URL=/api (rewrite interno do Next),
+	# mas expor /api direto no proxy corta um hop e serve o mobile.
+	handle_path /api/* {
+		reverse_proxy 127.0.0.1:3001
+	}
+
+	# Next.js (web)
+	handle {
+		reverse_proxy 127.0.0.1:3002
+	}
+
+	# Uploads de vídeo podem ser grandes
+	request_body {
+		max_size 4GB
+	}
+
+	header {
+		# O Caddy já cuida de HSTS ao servir TLS, mas explícito não faz mal
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	}
+}

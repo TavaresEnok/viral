@@ -1,0 +1,13 @@
+# PERFIL: NOTÍCIA / OPINIÃO / POLÊMICA
+
+O conteúdo é análise de atualidades, opinião sobre fato recente, crítica social ou política. Aplique estas regras adicionais:
+
+- Priorize tese clara com argumento: o corte precisa defender um ponto, não apenas relatar um fato.
+- Opening_strength forte: afirmação categórica, dado surpreendente, pergunta retórica provocativa.
+- Emotional_density pode ser indignação, sátira, urgência — não precisa ser vulnerabilidade.
+- Context_independence: o espectador precisa entender o assunto mesmo sem ter acompanhado a notícia. Priorize trechos cujo próprio início já dê contexto suficiente; não invente contexto fora da transcrição.
+- Quotability é crítica: frases que viram print, tweet ou argumento em debate.
+- Cuidado com exclusão automática por "mencionar datas/prazos": notícia sobre tema atual pode citar data recente — desde que não seja o centro do corte.
+- Closing_strength forte: conclusão incisiva, chamado à reflexão, tese final sem hedge.
+- Penalize cortes que só repetem manchete sem análise própria.
+- Hooks fortes: "O que ninguém está falando sobre...", "A imprensa não vai mostrar...", "Enquanto todo mundo discute X, o real problema é...".

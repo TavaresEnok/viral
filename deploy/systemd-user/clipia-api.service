@@ -1,0 +1,23 @@
+[Unit]
+Description=ViralForge API
+Requires=clipia-infra.service
+After=clipia-infra.service network.target
+# Evita crash-loop infinito: no máximo 5 reinícios em 300s.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+# Roda o build (dist) diretamente — estável e rápido. NÃO usa `pnpm dev:api`,
+# que rebuilda + tsc a cada start (frágil: um erro de tsc derrubava o serviço).
+# Faça o build no deploy: `corepack pnpm --filter @viralforge/api build`.
+WorkingDirectory=/home/ia/Documents/projetos/ViralForge/apps/api
+Environment=PATH=/home/ia/.nvm/versions/node/v20.20.2/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/home/ia/.nvm/versions/node/v20.20.2/bin/node --env-file=/home/ia/Documents/projetos/ViralForge/.env dist/apps/api/src/main.js
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

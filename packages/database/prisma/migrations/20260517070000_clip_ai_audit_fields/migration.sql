@@ -1,0 +1,3 @@
+ALTER TABLE "Clip"
+  ADD COLUMN IF NOT EXISTS "actualTextInClip" TEXT,
+  ADD COLUMN IF NOT EXISTS "evaluationNotes" JSONB;

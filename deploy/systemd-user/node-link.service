@@ -1,0 +1,23 @@
+[Unit]
+StartLimitIntervalSec=300
+StartLimitBurst=5
+Description=Node link tunnel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/ssh -N -T \
+  -i /home/ia/.ssh/id_node_agent \
+  -p 22563 \
+  -o ExitOnForwardFailure=yes \
+  -o ServerAliveInterval=30 \
+  -o ServerAliveCountMax=3 \
+  -o StrictHostKeyChecking=accept-new \
+  -L 127.0.0.1:9873:127.0.0.1:9873 \
+  root@168.194.15.42
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

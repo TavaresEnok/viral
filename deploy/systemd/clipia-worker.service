@@ -1,0 +1,21 @@
+[Unit]
+StartLimitIntervalSec=300
+StartLimitBurst=5
+Description=ViralForge Worker
+After=network.target docker.service viralforge-api.service
+Wants=network.target
+
+[Service]
+Type=simple
+User=ia
+WorkingDirectory=/home/ia/Documents/projetos/ViralForge
+Environment=PATH=/home/ia/.nvm/versions/node/v20.20.2/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=NODE_ENV=development
+ExecStart=/home/ia/.nvm/versions/node/v20.20.2/bin/corepack pnpm dev:worker
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

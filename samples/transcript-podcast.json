@@ -1,0 +1,133 @@
+{
+  "title": "Podcast - Fundador sem filtro",
+  "language": "pt-BR",
+  "duration": 713.0,
+  "segments": [
+    {
+      "id": 1,
+      "speaker": "HOST",
+      "start": 0.0,
+      "end": 33.2,
+      "text": "Hoje eu quero começar com a pergunta que quase ninguém faz em público: qual foi a mentira mais cara que você contou para parecer que a empresa estava bem?"
+    },
+    {
+      "id": 2,
+      "speaker": "CONVIDADO",
+      "start": 33.2,
+      "end": 74.8,
+      "text": "Eu disse para todo mundo que a gente estava crescendo, mas na real faltavam dezoito dias para o caixa zerar e eu já tinha ensaiado como avisar o time que o jogo tinha acabado."
+    },
+    {
+      "id": 3,
+      "speaker": "HOST",
+      "start": 74.8,
+      "end": 112.0,
+      "text": "Você tinha vinte e quatro pessoas na folha. Em que momento caiu a ficha de que o problema não era marketing, era modelo de negócio quebrado?"
+    },
+    {
+      "id": 4,
+      "speaker": "CONVIDADO",
+      "start": 112.0,
+      "end": 155.7,
+      "text": "Caiu quando eu vi que o cliente mais fiel dava lucro só no PowerPoint. No banco, cada venda tirava dinheiro da empresa, então crescer estava acelerando nossa queda."
+    },
+    {
+      "id": 5,
+      "speaker": "HOST",
+      "start": 155.7,
+      "end": 198.5,
+      "text": "E você teve que demitir gente que acreditou em você. Como você contou isso sem destruir a confiança da equipe que ficou?"
+    },
+    {
+      "id": 6,
+      "speaker": "CONVIDADO",
+      "start": 198.5,
+      "end": 242.4,
+      "text": "Eu fui um por um, olhando no olho, dizendo exatamente o que errei. Foi a conversa mais dolorosa da minha vida, mas foi ali que a cultura começou de verdade."
+    },
+    {
+      "id": 7,
+      "speaker": "HOST",
+      "start": 242.4,
+      "end": 282.0,
+      "text": "Você também ficou famoso quando dobrou o preço do produto de uma semana para outra. Todo mundo chamou de loucura, arrogância, suicídio comercial."
+    },
+    {
+      "id": 8,
+      "speaker": "CONVIDADO",
+      "start": 282.0,
+      "end": 327.3,
+      "text": "Foi a melhor decisão do ano. Metade dos clientes foi embora xingando, mas os que ficaram usavam de verdade e indicavam. Receita caiu no mês um e explodiu no mês três."
+    },
+    {
+      "id": 9,
+      "speaker": "HOST",
+      "start": 327.3,
+      "end": 371.9,
+      "text": "Teve um corte seu que viralizou com a frase: cliente ruim quebra empresa boa. Você recebeu ameaça, perdeu parceria e ganhou seguidores ao mesmo tempo."
+    },
+    {
+      "id": 10,
+      "speaker": "CONVIDADO",
+      "start": 371.9,
+      "end": 414.6,
+      "text": "Aprendi que frase forte sem contexto vira arma contra você. Mas também aprendi que tentar agradar todo mundo é o atalho mais rápido para ser irrelevante."
+    },
+    {
+      "id": 11,
+      "speaker": "HOST",
+      "start": 414.6,
+      "end": 458.7,
+      "text": "Você fala muito de saúde mental e performance. Qual hábito glamouroso você abandonou quando percebeu que estava se enganando?"
+    },
+    {
+      "id": 12,
+      "speaker": "CONVIDADO",
+      "start": 458.7,
+      "end": 501.8,
+      "text": "Acordar às cinco da manhã. Eu postava foto do relógio para parecer disciplinado, mas passava o dia irritado e improdutivo. Troquei ego por resultado e tudo melhorou."
+    },
+    {
+      "id": 13,
+      "speaker": "HOST",
+      "start": 501.8,
+      "end": 545.1,
+      "text": "No palco você já contou de uma crise de pânico antes de uma palestra para mil pessoas. O que você fez nos dois minutos que salvaram sua apresentação?"
+    },
+    {
+      "id": 14,
+      "speaker": "CONVIDADO",
+      "start": 545.1,
+      "end": 589.3,
+      "text": "Eu parei de lutar contra o medo. Falei em voz alta para mim mesmo: você não precisa ser brilhante, só precisa ser útil para uma pessoa na plateia."
+    },
+    {
+      "id": 15,
+      "speaker": "HOST",
+      "start": 589.3,
+      "end": 632.2,
+      "text": "Se um fundador novo estivesse vendo este episódio agora, sem dinheiro e sem rede de apoio, qual seria a primeira decisão prática para amanhã cedo?"
+    },
+    {
+      "id": 16,
+      "speaker": "CONVIDADO",
+      "start": 632.2,
+      "end": 676.8,
+      "text": "Escolha uma métrica que realmente paga boleto e ignore o resto por trinta dias. Quando todo mundo opina, foco vira vantagem competitiva, não rigidez."
+    },
+    {
+      "id": 17,
+      "speaker": "HOST",
+      "start": 676.8,
+      "end": 699.6,
+      "text": "Frase final em sete palavras para quem está prestes a desistir hoje."
+    },
+    {
+      "id": 18,
+      "speaker": "CONVIDADO",
+      "start": 699.6,
+      "end": 713.0,
+      "text": "Coragem é continuar quando o aplauso some."
+    }
+  ]
+}

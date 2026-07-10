@@ -1,0 +1,187 @@
+name: CI
+
+on:
+  push:
+    branches: ["master", "main"]
+  pull_request:
+    branches: ["master", "main"]
+  workflow_dispatch:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: viralforge_ci
+          POSTGRES_PASSWORD: viralforge_ci_secret
+          POSTGRES_DB: viralforge_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U viralforge_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://viralforge_ci:viralforge_ci_secret@localhost:5432/viralforge_ci?schema=public
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
+      JWT_SECRET: ci-test-jwt-secret-at-least-32-chars-long
+      MASTER_SECRET: ci-test-master-secret-at-least-32-chars
+      STORAGE_ROOT: /tmp/viralforge-ci-storage
+      NODE_ENV: test
+      WEB_ORIGIN: http://localhost:3000
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter @viralforge/database db:generate
+
+      - name: Run Prisma migrations
+        run: pnpm --filter @viralforge/database exec prisma migrate deploy --schema prisma/schema.prisma
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint (strict)
+        run: pnpm lint:strict
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+      - name: Release Check
+        run: pnpm release:check:ci
+
+      - name: Validate Docker entrypoints
+        run: |
+          test -f apps/api/dist/apps/api/src/main.js || (echo "ERROR: apps/api/dist/apps/api/src/main.js not found after build" && exit 1)
+          test -f apps/worker/dist/apps/worker/src/main.js || (echo "ERROR: apps/worker/dist/apps/worker/src/main.js not found after build" && exit 1)
+          echo "Docker entrypoints validated OK"
+
+  e2e:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: viralforge_ci
+          POSTGRES_PASSWORD: viralforge_ci_secret
+          POSTGRES_DB: viralforge_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U viralforge_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://viralforge_ci:viralforge_ci_secret@localhost:5432/viralforge_ci?schema=public
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
+      JWT_SECRET: ci-test-jwt-secret-at-least-32-chars-long
+      MASTER_SECRET: ci-test-master-secret-at-least-32-chars
+      STORAGE_ROOT: /tmp/viralforge-e2e-storage
+      WEB_ORIGIN: http://localhost:3002
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+      NODE_ENV: development
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # O script `dev` da API usa `node --env-file=../../.env`, que exige o
+      # arquivo na raiz. Geramos um .env mínimo a partir das vars do job.
+      - name: Create root .env for dev servers
+        run: |
+          cat > .env <<EOF
+          DATABASE_URL=${DATABASE_URL}
+          REDIS_HOST=${REDIS_HOST}
+          REDIS_PORT=${REDIS_PORT}
+          JWT_SECRET=${JWT_SECRET}
+          MASTER_SECRET=${MASTER_SECRET}
+          STORAGE_ROOT=${STORAGE_ROOT}
+          WEB_ORIGIN=${WEB_ORIGIN}
+          NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+          EOF
+
+      - name: Generate Prisma client
+        run: pnpm --filter @viralforge/database db:generate
+
+      - name: Run Prisma migrations
+        run: pnpm --filter @viralforge/database exec prisma migrate deploy --schema prisma/schema.prisma
+
+      - name: Install Playwright browser
+        run: pnpm --filter @viralforge/web exec playwright install --with-deps chromium
+
+      - name: Run E2E (Playwright)
+        run: pnpm test:e2e
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            apps/web/playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore

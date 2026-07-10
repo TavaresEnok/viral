@@ -1,0 +1,13 @@
+# PERFIL: COMÉDIA / HUMOR
+
+O conteúdo tem intenção cômica: piada, sketch, imitação, sarcasmo. Aplique estas regras adicionais:
+
+- Priorize setup + punchline. O corte precisa conter a preparação E a conclusão cômica.
+- Nunca corte antes da piada fechar. Se a piada só resolve nos últimos 3 segundos, o corte inteiro vale.
+- Closing_strength pode ser a risada/reação se ela funcionar como remate da piada.
+- Emotional_density = engajamento cômico (surpresa, absurdo, ironia) — não precisa ser "emoção profunda".
+- Quotability é naturalmente alta em comédia: frases de efeito, ditados invertidos, exageros.
+- Penalize explicação longa depois da piada — se explica, perdeu a graça.
+- Context_independence: a piada precisa ser compreensível sem depender de contexto visual ou piada anterior.
+- Palavrão ou grito só deve ser tolerado quando é parte direta da piada e não é repetitivo/gratuito; mantenha os gates globais de segurança.
+- Hooks fortes: "Sabe quando...", "Imagina a cena...", frase absurda fora de contexto.

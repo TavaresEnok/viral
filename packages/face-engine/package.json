@@ -1,0 +1,9 @@
+{
+  "name": "@viralforge/face-engine",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "cmake -B build -S . && cmake --build build --config Release",
+    "test": "echo \"Test placeholder\""
+  }
+}

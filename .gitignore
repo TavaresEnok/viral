@@ -1,0 +1,72 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+.next/
+.turbo/
+*.tsbuildinfo
+
+# Environment files — NEVER commit secrets
+.env
+.env.local
+.env.*.local
+.env.bak*
+
+# Test & coverage
+coverage/
+.pytest_cache/
+
+# Storage — may contain user PII/videos
+storage/uploads/
+apps/*/storage/
+
+# Logs
+*.log
+logs/
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# Python artifacts (from remote-agent and tools)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+*.egg-info/
+
+# Temporary files
+tmp/
+temp/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Docker
+.dockerignore
+
+# Test samples
+samples/sample-video.mp4
+
+# pnpm
+.npmrc.local
+
+# Redesign reference material (already applied to the codebase)
+Viral.zip
+
+# C++ build artifacts (keep source + binary, skip intermediates)
+packages/face-engine/build/CMakeFiles/
+packages/face-engine/build/*.o
+packages/face-engine/build/cmake_install.cmake
+packages/face-engine/build/Makefile
+
+# Claude Code — settings locais por máquina (não versionar)
+.claude/settings.local.json

@@ -1,0 +1,34 @@
+{
+  "name": "Palestra - Produtividade sem romantização",
+  "transcript": {
+    "title": "Palestra - Produtividade sem romantização",
+    "language": "pt-BR",
+    "duration": 688.4,
+    "segments": [
+      {"id":1,"speaker":"PALESTRANTE","start":0.0,"end":39.5,"text":"Se sua agenda está lotada e sua meta continua parada, você não tem problema de disciplina, você tem problema de coragem para dizer não."},
+      {"id":2,"speaker":"PALESTRANTE","start":39.5,"end":82.1,"text":"Produtividade virou estética: caderno bonito, aplicativo novo, mesa perfeita. Só que resultado real nasce de escolha desconfortável, não de ferramenta brilhante."},
+      {"id":3,"speaker":"PALESTRANTE","start":82.1,"end":125.0,"text":"Eu descobri isso quando percebi que respondia e-mail em cinco minutos e adiava por semanas a conversa que realmente mudaria o meu negócio."},
+      {"id":4,"speaker":"PALESTRANTE","start":125.0,"end":168.2,"text":"Tem uma pergunta que eu uso todo dia: se eu só pudesse terminar uma tarefa hoje, qual tarefa faria o restante perder urgência?"},
+      {"id":5,"speaker":"PALESTRANTE","start":168.2,"end":210.6,"text":"Quando você acerta essa resposta, o resto vira barulho. Quando erra, você termina cansado, ocupado e com a sensação de ter andado em círculos."},
+      {"id":6,"speaker":"PALESTRANTE","start":210.6,"end":253.3,"text":"Outro mito: multitarefa. O cérebro não faz duas coisas cognitivas profundas ao mesmo tempo, ele alterna foco e paga pedágio mental em cada troca."},
+      {"id":7,"speaker":"PALESTRANTE","start":253.3,"end":296.1,"text":"Eu medi isso com meu time. Sempre que a gente interrompia um bloco de criação para uma mensagem rápida, perdíamos de quinze a vinte minutos para voltar ao ritmo."},
+      {"id":8,"speaker":"PALESTRANTE","start":296.1,"end":339.8,"text":"Por isso criamos janela de foco sem notificação. No começo parece radical, depois você percebe que radical era trabalhar o dia inteiro e entregar pouco."},
+      {"id":9,"speaker":"PALESTRANTE","start":339.8,"end":382.9,"text":"Agora a parte polêmica: descanso também é estratégia. Gente exausta toma decisão ruim, e decisão ruim custa mais caro do que qualquer pausa de trinta minutos."},
+      {"id":10,"speaker":"PALESTRANTE","start":382.9,"end":425.7,"text":"Não estou falando de luxo, estou falando de manutenção. Você não chama de preguiça quando um carro para para trocar óleo, então por que chama assim com você?"},
+      {"id":11,"speaker":"PALESTRANTE","start":425.7,"end":468.0,"text":"Outra virada foi parar de medir valor por horas trabalhadas. Hora não é unidade de impacto. Impacto é resolver problema que estava travando resultado."},
+      {"id":12,"speaker":"PALESTRANTE","start":468.0,"end":512.4,"text":"Eu tinha orgulho de virar madrugada. Hoje eu tenho orgulho de terminar cedo sem culpa porque executei o que realmente importava."},
+      {"id":13,"speaker":"PALESTRANTE","start":512.4,"end":556.2,"text":"Se você quer um ritual prático, aqui vai: três prioridades por dia, uma meta por prioridade, e uma revisão honesta no fim do expediente."},
+      {"id":14,"speaker":"PALESTRANTE","start":556.2,"end":602.5,"text":"Quando algo novo entra, não pergunte se parece legal. Pergunte o que sai da agenda para isso caber. Sem troca explícita, seu plano já quebrou."},
+      {"id":15,"speaker":"PALESTRANTE","start":602.5,"end":646.9,"text":"O segredo não é fazer mais. O segredo é parar de negociar com a distração e assumir o custo de toda escolha que você faz com o seu tempo."},
+      {"id":16,"speaker":"PALESTRANTE","start":646.9,"end":688.4,"text":"Se hoje você sair daqui lembrando só de uma frase, leve essa: produtividade de verdade é coragem organizada."}
+    ]
+  },
+  "expectedClips": [
+    {"start": 0.0, "end": 39.5, "reason": "Abertura forte: agenda lotada não é disciplina, é falta de coragem de dizer não"},
+    {"start": 39.5, "end": 82.1, "reason": "Crítica à estética da produtividade: caderno bonito vs escolha desconfortável"},
+    {"start": 125.0, "end": 168.2, "reason": "Pergunta prática: que tarefa faria o resto perder urgência? — gancho útil"},
+    {"start": 210.6, "end": 253.3, "reason": "Mito da multitarefa: cérebro alterna foco e paga pedágio mental"},
+    {"start": 339.8, "end": 382.9, "reason": "Parte polêmica: descanso é estratégia, decisão ruim custa mais que pausa"},
+    {"start": 646.9, "end": 688.4, "reason": "Frase de encerramento: produtividade de verdade é coragem organizada"}
+  ]
+}

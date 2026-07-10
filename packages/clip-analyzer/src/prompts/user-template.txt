@@ -1,0 +1,67 @@
+# TAREFA — SELEÇÃO E AVALIAÇÃO DE CORTES
+
+Analise a transcrição abaixo e selecione os melhores cortes em uma única passada: encontre os trechos com maior potencial, ajuste início e fim para que cada corte abra forte e feche bem, e avalie cada um nas 5 dimensões.
+
+Seja severo: se não houver material forte, retorne {"clips": []}. É melhor retornar poucos cortes excelentes do que muitos medianos.
+
+# PARÂMETROS
+
+- Estilo solicitado: {clipStyle}
+- Idioma: {language}
+- Duração preferida: {preferredDuration} segundos
+
+# TRANSCRIÇÃO
+
+Formato de cada linha: [início-fim] falante: texto, com tempos em segundos. As linhas podem não ser contíguas (transcrição amostrada).
+
+{transcriptBlock}
+
+# FORMATO DE SAÍDA
+
+Retorne APENAS JSON válido, sem markdown e sem explicação:
+
+{
+  "clips": [
+    {
+      "title": "título curto e verdadeiro",
+      "start": 125.3,
+      "end": 172.8,
+      "duration": 47,
+      "scores": {
+        "opening_strength": 88,
+        "closing_strength": 82,
+        "context_independence_score": 78,
+        "emotional_density": 75,
+        "quotability": 80
+      },
+      "risk_of_bad_cut": "low",
+      "closing_type": "thesis",
+      "category": "opinião",
+      "hook": "primeira frase do corte, copiada literalmente da transcrição",
+      "suggested_caption_title": "frase curta para aparecer no vídeo",
+      "first_three_seconds_hook": "por que os primeiros 3 segundos funcionam",
+      "shareability_reason": "por que alguém compartilharia",
+      "evaluation_notes": {
+        "first_three_seconds": "avaliação curta do hook",
+        "closing_real": "últimas palavras do corte, copiadas literalmente da transcrição",
+        "closing_check": "avaliação curta do fechamento",
+        "context_check": "por que funciona sozinho",
+        "emotional_pull": "emoção, tensão, surpresa ou quotabilidade"
+      },
+      "reason": "por que esse trecho tem potencial"
+    }
+  ]
+}
+
+# REGRAS
+
+- start e end em segundos, copiados exatamente dos timestamps das linhas da transcrição: start = início de uma linha, end = fim de uma linha. Nunca invente valores intermediários.
+- Não crie cortes que atravessem lacunas de mais de 3 segundos entre linhas da transcrição.
+- duration inteiro, round(end - start).
+- Não retorne viral_score. O backend calcula.
+- Não retorne actual_text_in_clip. O backend extrai da transcrição.
+- Não invente falas.
+- Não escolha trechos fora da transcrição.
+- Duração entre 15 e 90 segundos é obrigatória; fora disso o corte é descartado pelo sistema.
+- Use a hierarquia: fechamento > abertura > independência > emoção > duração.
+- Retorne no máximo {maxClips} clips. Em vídeos longos há mais bons momentos — aproveite o limite, mas só com cortes que realmente valem a pena (qualidade acima de quantidade).

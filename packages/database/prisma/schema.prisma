@@ -1,0 +1,550 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ProjectStatus {
+  DRAFT
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum ContentType {
+  PODCAST
+  INTERVIEW
+  CLASS
+  LIVE
+  TALK
+  COMEDY
+  GAMING
+  MYSTERY
+  NEWS
+  OTHER
+}
+
+enum ClipStyle {
+  VIRAL
+  EDUCATIONAL
+  CONTROVERSIAL
+  FUNNY
+  MOTIVATIONAL
+  SALES
+  STRONG_QUOTES
+}
+
+enum ClipStatus {
+  PENDING
+  RENDERING
+  COMPLETED
+  FAILED
+}
+
+enum ProcessingStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum RenderLayout {
+  BLURRED_BACKGROUND
+  FILL_CROP
+  CENTER_FIT
+  TOP_FRAME
+  SMART_REFRAME
+  SMART_CENTER
+  SPEAKER_CLOSEUP
+  PODCAST_SPLIT_STATIC
+  SCREEN_PLUS_FACE
+}
+
+enum CaptionTheme {
+  CLEAN_FOOTER
+  BOLD_FOOTER
+  CREATOR_BOX
+  MINIMAL
+  BOLD_CREATOR
+  CLEAN_EDITORIAL
+  NEON_TECH
+  KARAOKE_PRO
+  PODCAST_PRO
+  STORY_IMPACT
+}
+
+enum ClipFeedbackReason {
+  WEAK_START
+  WEAK_END
+  NOT_VIRAL
+  MISSING_CONTEXT
+  BAD_CAPTION
+  OTHER
+}
+
+model User {
+  id                       String                  @id @default(cuid())
+  name                     String
+  email                    String                  @unique
+  passwordHash             String
+  emailVerified            Boolean                 @default(false)
+  isAdmin                  Boolean                 @default(false)
+  suspended                Boolean                 @default(false)
+  deepseekApiKeyEncrypted  String?
+  openaiApiKeyEncrypted    String?
+  deepseekModel            String                  @default("deepseek-chat")
+  openaiTranscriptionModel String                  @default("whisper-1")
+  createdAt                DateTime                @default(now())
+  updatedAt                DateTime                @updatedAt
+  projects                 Project[]
+  clipFeedbacks            ClipFeedback[]
+  aiProviderIntegrations   AiProviderIntegration[]
+  brandKits                BrandKit[]
+  captionTemplates         CaptionTemplate[]
+  quota                    UserQuota?
+  socialAccounts           SocialAccount[]
+  refreshTokens            RefreshToken[]
+  auditLogs                AuditLog[]
+  apiKeys                  ApiKey[]
+  emailTokens              EmailToken[]
+  npsResponses             NPSResponse[]
+
+  @@index([createdAt])
+  @@index([suspended])
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  family    String
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@index([family])
+  @@index([expiresAt])
+}
+
+enum EmailTokenType {
+  VERIFY_EMAIL
+  RESET_PASSWORD
+}
+
+model EmailToken {
+  id        String         @id @default(cuid())
+  userId    String
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      EmailTokenType
+  tokenHash String         @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime       @default(now())
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@index([type])
+  @@index([expiresAt])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action     String
+  entityType String?
+  entityId   String?
+  ip         String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+model BrandKit {
+  id               String    @id @default(cuid())
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name             String
+  primaryColor     String    @default("#6C5CE7")
+  accentColor      String    @default("#00CEC9")
+  captionTheme     String    @default("CLEAN_FOOTER")
+  logoPath         String?
+  watermarkPath    String?
+  watermarkPos     String    @default("bottom-right")
+  watermarkOpacity Float     @default(0.5)
+  projects         Project[]
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([userId])
+}
+
+model CaptionTemplate {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  captionTheme String
+  renderLayout String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model UserQuota {
+  userId                    String   @id
+  user                      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan                      String   @default("free")
+  monthlyProjectMinutes     Float    @default(0)
+  monthlyRenders            Int      @default(0)
+  monthlyResetAt            DateTime @default(now())
+  maxProjectMinutesPerMonth Float    @default(60)
+  maxRendersPerMonth        Int      @default(20)
+  maxProjectsPerMonth       Int      @default(5)
+  stripeSubscriptionId      String?  @unique
+  stripeCustomerId          String?
+  subscriptionStatus        String   @default("inactive")
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+}
+
+model AiProviderIntegration {
+  id                String    @id @default(cuid())
+  userId            String
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider          String
+  label             String
+  role              String    @default("LLM")
+  encryptedApiKey   String?
+  baseUrl           String?
+  model             String
+  active            Boolean   @default(false)
+  lastTestedAt      DateTime?
+  lastTestStatus    String?
+  lastTestLatencyMs Int?
+  lastTestError     String?
+  lastUsedAt        DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@unique([userId, provider, role])
+  @@index([userId])
+  @@index([provider])
+  @@index([role])
+}
+
+model Project {
+  id                    String              @id @default(cuid())
+  userId                String
+  user                  User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title                 String
+  language              String              @default("pt-BR")
+  contentType           ContentType
+  clipStyle             ClipStyle
+  preferredClipDuration Int                 @default(45)
+  renderLayout          RenderLayout        @default(BLURRED_BACKGROUND)
+  captionTheme          CaptionTheme        @default(CLEAN_FOOTER)
+  status                ProjectStatus       @default(DRAFT)
+  progress              Int                 @default(0)
+  sourceUrl             String?
+  originalFilePath      String?
+  audioFilePath         String?
+  durationSeconds       Float?
+  llmPass1Tokens        Int?
+  llmPass2Tokens        Int?
+  llmPass1Model         String?
+  llmPass2Model         String?
+  llmCostEstimate       Float?
+  brandKitId            String?
+  brandKit              BrandKit?           @relation(fields: [brandKitId], references: [id], onDelete: SetNull)
+  errorMessage          String?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  transcript            Transcript?
+  clips                 Clip[]
+  jobs                  ProcessingJob[]
+  pipelineMetrics       PipelineRunMetric[]
+
+  @@index([userId])
+  @@index([status])
+}
+
+model Transcript {
+  id               String   @id @default(cuid())
+  projectId        String   @unique
+  project          Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  language         String
+  source           String   @default("unknown")
+  sourceModel      String?
+  asrProvider      String?
+  asrModel         String?
+  asrComputeType   String?
+  asrDevice        String?
+  asrBatchSize     Int?
+  asrDownloadSec   Float?
+  asrNormalizeSec  Float?
+  asrTranscribeSec Float?
+  asrTotalSec      Float?
+  asrRtf           Float?
+  asrCacheHit      Boolean  @default(false)
+  asrFallbackUsed  Boolean  @default(false)
+  qualityScore     Float?
+  qualityWarnings  Json?
+  segmentCount     Int      @default(0)
+  wordCount        Int      @default(0)
+  fullText         String
+  segmentsJson     Json
+  wordsJson        Json?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([language])
+  @@index([createdAt])
+}
+
+model Clip {
+  id                       String          @id @default(cuid())
+  projectId                String
+  project                  Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title                    String
+  suggestedStart           Float?
+  suggestedEnd             Float?
+  start                    Float
+  end                      Float
+  duration                 Float
+  viralScore               Int
+  finalScore               Int             @default(0)
+  scoreBreakdown           Json?
+  openingStrength          Int?
+  closingStrength          Int?
+  contextIndependenceScore Int?
+  emotionalDensity         Int?
+  quotability              Int?
+  closingType              String?
+  riskOfBadCut             String?
+  needsReview              Boolean         @default(false)
+  textSimilarity           Float?
+  detectedWeakEnding       Boolean         @default(false)
+  detectedLastWords        String?
+  wasAdjustedByAi          Boolean         @default(false)
+  adjustmentNotes          String?
+  suggestedCaptionTitle    String?
+  firstThreeSecondsHook    String?
+  shareabilityReason       String?
+  actualTextInClip         String?
+  evaluationNotes          Json?
+  category                 String
+  hook                     String?
+  reason                   String
+  renderLayout             RenderLayout?
+  captionTheme             CaptionTheme?
+  status                   ClipStatus      @default(PENDING)
+  videoPath                String?
+  thumbnailPath            String?
+  srtPath                  String?
+  vttPath                  String?
+  errorMessage             String?
+  renderEngine             String?
+  renderDurationMs         Int?
+  faceTrackJson            Json?
+  subtitleSegmentsJson     Json?
+  createdAt                DateTime        @default(now())
+  updatedAt                DateTime        @updatedAt
+  feedbacks                ClipFeedback[]
+  publishJobs              PublishedClip[]
+
+  @@index([projectId])
+  @@index([status])
+}
+
+model ClipFeedback {
+  id        String             @id @default(cuid())
+  clipId    String
+  clip      Clip               @relation(fields: [clipId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reason    ClipFeedbackReason
+  note      String?
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  @@unique([clipId, userId])
+  @@index([userId])
+  @@index([reason])
+}
+
+model ProcessingJob {
+  id           String           @id @default(cuid())
+  projectId    String
+  project      Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  stage        String
+  status       ProcessingStatus @default(PENDING)
+  progress     Int              @default(0)
+  errorMessage String?
+  startedAt    DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@unique([projectId, stage])
+  @@index([projectId])
+}
+
+model PipelineRunMetric {
+  id                     String           @id @default(cuid())
+  projectId              String
+  project                Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  jobId                  String?
+  status                 ProcessingStatus
+  failedStage            String?
+  errorMessage           String?
+  totalSec               Float?
+  stageTimings           Json?
+  videoDurationSec       Float?
+  transcriptSource       String?
+  transcriptQualityScore Float?
+  transcriptSegmentCount Int?
+  transcriptWordCount    Int?
+  asrProvider            String?
+  asrModel               String?
+  asrComputeType         String?
+  asrDevice              String?
+  asrTotalSec            Float?
+  asrRtf                 Float?
+  llmPass1Model          String?
+  llmPass2Model          String?
+  llmPass1Tokens         Int?
+  llmPass2Tokens         Int?
+  llmTotalTokens         Int?
+  llmCostEstimate        Float?
+  pass1CandidateCount    Int?
+  pass2ClipCount         Int?
+  approvedClipCount      Int?
+  rejectionRate          Float?
+  rawClipCount           Int?
+  validatedClipCount     Int?
+  renderedClipCount      Int?
+  failedRenderCount      Int?
+  remoteGpuUsed          Boolean          @default(false)
+  fallbackUsed           Boolean          @default(false)
+  renderEngines          Json?
+  createdAt              DateTime         @default(now())
+
+  @@index([projectId])
+  @@index([jobId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+enum SocialPlatform {
+  YOUTUBE
+  TIKTOK
+  INSTAGRAM
+}
+
+enum PublishStatus {
+  PENDING
+  PUBLISHING
+  PUBLISHED
+  FAILED
+}
+
+model SocialAccount {
+  id                    String          @id @default(cuid())
+  userId                String
+  user                  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platform              SocialPlatform
+  platformAccountId     String?
+  platformAccountName   String?
+  accessTokenEncrypted  String?
+  refreshTokenEncrypted String?
+  tokenExpiresAt        DateTime?
+  active                Boolean         @default(true)
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  publishedClips        PublishedClip[]
+
+  @@unique([userId, platform])
+  @@index([userId])
+  @@index([platform])
+}
+
+model PublishedClip {
+  id              String         @id @default(cuid())
+  clipId          String
+  clip            Clip           @relation(fields: [clipId], references: [id], onDelete: Cascade)
+  socialAccountId String
+  socialAccount   SocialAccount  @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  platform        SocialPlatform
+  status          PublishStatus  @default(PENDING)
+  platformPostId  String?
+  platformPostUrl String?
+  errorMessage    String?
+  scheduledAt     DateTime?
+  publishedAt     DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([clipId])
+  @@index([socialAccountId])
+  @@index([status])
+}
+
+model ApiKey {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label      String    @default("default")
+  keyHash    String    @unique
+  active     Boolean   @default(true)
+  expiresAt  DateTime?
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([keyHash])
+}
+
+model NPSResponse {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  score     Int       @db.SmallInt // 0-10
+  feedback  String?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([score])
+}
+
+// Configuração global de IA controlada pelo admin (singleton id="default").
+// Quando ativa, o worker usa estas credenciais/modelo para TODOS os usuários,
+// em vez das integrações por-usuário. Mantém fallback se inativa.
+model PlatformAiConfig {
+  id                           String   @id @default("default")
+  llmActive                    Boolean  @default(false)
+  llmProvider                  String?
+  llmModel                     String?
+  llmBaseUrl                   String?
+  llmApiKeyEncrypted           String?
+  transcriptionActive          Boolean  @default(false)
+  transcriptionProvider        String?
+  transcriptionModel           String?
+  transcriptionBaseUrl         String?
+  transcriptionApiKeyEncrypted String?
+  updatedAt                    DateTime @updatedAt
+  createdAt                    DateTime @default(now())
+}

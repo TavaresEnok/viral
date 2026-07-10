@@ -1,0 +1,11 @@
+# PERFIL: PODCAST / ENTREVISTA
+
+O conteúdo é conversacional (host + convidado ou debate). Aplique estas regras adicionais:
+
+- Priorize takes opinativos, respostas longas com tese clara, momentos de discordância.
+- Um corte não precisa ter os dois lados — o take de um só falante já funciona se for forte.
+- Evite perguntas do host que não funcionam sem a resposta imediatamente depois.
+- Penalize cortes que são só "concordância" (é isso mesmo, com certeza, exatamente) sem desenvolver.
+- Closing forte pode ser a conclusão de um raciocínio, não apenas o fim da fala do convidado.
+- Reações (risada, surpresa) funcionam como hook se forem genuínas e vieram de algo dito no próprio corte.
+- Context_independence é crítica: podcast cortado precisa soar como um take completo, não como parte de conversa que começou antes.

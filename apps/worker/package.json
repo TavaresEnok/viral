@@ -1,0 +1,39 @@
+{
+  "name": "@viralforge/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "corepack pnpm --filter @viralforge/shared build && corepack pnpm --filter @viralforge/database build && corepack pnpm --filter @viralforge/clip-analyzer build && tsc -p tsconfig.json && node dist/apps/worker/src/main.js",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/config": "^4.0.0",
+    "@nestjs/core": "^11.0.0",
+    "@nestjs/schedule": "^5.0.0",
+    "@prisma/client": "^5.22.0",
+    "@remotion/bundler": "^4.0.462",
+    "@remotion/renderer": "^4.0.462",
+    "@sentry/node": "^10.56.0",
+    "@viralforge/clip-analyzer": "workspace:*",
+    "@viralforge/database": "workspace:*",
+    "@viralforge/render-engine": "workspace:*",
+    "@viralforge/shared": "workspace:*",
+    "bullmq": "^5.58.7",
+    "googleapis": "^172.0.0",
+    "ioredis": "^5.7.0",
+    "openai": "^4.104.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "youtube-dl-exec": "^3.1.7",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.6",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.3"
+  }
+}

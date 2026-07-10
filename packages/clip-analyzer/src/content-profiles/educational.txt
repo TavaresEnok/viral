@@ -1,0 +1,12 @@
+# PERFIL: EDUCACIONAL / AULA
+
+O conteúdo é didático: explicar conceito, ensinar passo a passo, demonstrar. Aplique estas regras adicionais:
+
+- Priorize mini-arco completo: afirmação + explicação + exemplo concreto.
+- Closing forte pode ser uma conclusão didática simples; não relaxe os gates globais de fechamento, apenas aceite que a conclusão não precisa ser punchline.
+- Emotional_density tem peso menor: clareza e aplicabilidade prática importam mais.
+- Quotability pode ser uma frase que resume o conceito de forma memorável.
+- Context_independence é crítica: o corte precisa funcionar sem o que foi ensinado antes.
+- Penalize cortes que só mostram o "o quê" sem o "como" ou "por quê".
+- Hooks fortes: "O erro que todo mundo comete é...", "A maioria das pessoas acha que X, mas na verdade...".
+- Evite cortes que dependem de visual (slide, quadro, gráfico) sem que a fala explique o bastante para quem não vê a imagem.

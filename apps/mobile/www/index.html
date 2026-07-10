@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>ViralForge</title>
+    <style>
+      html, body {
+        margin: 0;
+        height: 100%;
+        background: #0c0c11;
+        color: #fafafa;
+        font-family: -apple-system, system-ui, sans-serif;
+        display: grid;
+        place-items: center;
+      }
+      .box { text-align: center; padding: 24px; }
+      .logo { font-weight: 800; font-size: 28px; letter-spacing: -0.04em; }
+      .msg { margin-top: 12px; font-size: 14px; color: #a1a1aa; }
+      .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+        background: #c8f542; animation: blink 1.4s ease-in-out infinite; }
+      @keyframes blink { 0%, 100% { opacity: .25 } 50% { opacity: 1 } }
+    </style>
+  </head>
+  <body>
+    <!-- Fallback exibido só se o servidor remoto (server.url) estiver inacessível. -->
+    <div class="box">
+      <div class="logo">viral<span style="color:#c8f542">.</span></div>
+      <div class="msg"><span class="dot"></span> Conectando ao ViralForge…</div>
+    </div>
+  </body>
+</html>

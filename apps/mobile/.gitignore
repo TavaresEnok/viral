@@ -1,0 +1,15 @@
+# Plataformas nativas geradas pelo Capacitor (geradas via `cap add android`).
+# Mantenha fora do git OU versione só se for customizar (ícones, gradle, etc.).
+/android
+/ios
+
+# Dependências e build
+node_modules
+www/_next
+
+# Artefatos de build Android
+*.apk
+*.aab
+*.keystore
+*.jks
+google-services.json

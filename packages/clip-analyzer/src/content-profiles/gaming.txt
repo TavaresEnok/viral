@@ -1,0 +1,12 @@
+# PERFIL: GAMER / GAMEPLAY
+
+O conteúdo é de jogo: gameplay comentada, reação, competitivo, clipe de momento. Aplique estas regras adicionais:
+
+- Priorize momentos de tensão, virada, rage, clutch, falha absurda, sorte extrema ou reação genuína.
+- Emotional_density se aplica à reação do jogador (frustração, euforia, surpresa), não precisa vir da fala.
+- Opening_strength forte pode ser a reação ANTES do evento (ex: "vou tentar uma coisa absurda") ou o evento em si.
+- Closing_strength pode ser a conclusão do momento (vitória, morte, queda, silêncio de choque).
+- Context_independence: o corte precisa ser compreensível mesmo sem ter visto o jogo antes — a reação do jogador deve contar a história.
+- Quotability pode ser a frase de reação (grito, xingamento criativo, "como assim?!").
+- Penalize trechos com gameplay repetitivo sem reação ou fala relevante.
+- Hooks fortes: "olha isso...", "não vai dar tempo...", "se eu errar agora...", reação abrupta.

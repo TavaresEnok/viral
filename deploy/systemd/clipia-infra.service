@@ -1,0 +1,17 @@
+[Unit]
+StartLimitIntervalSec=300
+StartLimitBurst=5
+Description=ViralForge infrastructure containers
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/ia/Documents/projetos/ViralForge
+ExecStart=/usr/bin/docker compose -f /home/ia/Documents/projetos/ViralForge/infra/docker-compose.yml up -d
+ExecStop=/usr/bin/docker compose -f /home/ia/Documents/projetos/ViralForge/infra/docker-compose.yml down
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

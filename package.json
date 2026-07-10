@@ -1,0 +1,53 @@
+{
+    "name": "viralforge-clips",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "packageManager": "pnpm@9.15.9",
+    "scripts": {
+        "dev:infra": "docker compose -f infra/docker-compose.yml up -d",
+        "dev:infra:down": "docker compose -f infra/docker-compose.yml down",
+        "dev:api": "corepack pnpm --filter @viralforge/api dev",
+        "dev:worker": "corepack pnpm --filter @viralforge/worker dev",
+        "dev:web": "corepack pnpm --filter @viralforge/web dev",
+        "dev": "corepack pnpm dev:infra && corepack pnpm -r --parallel --filter @viralforge/api --filter @viralforge/worker --filter @viralforge/web dev",
+        "build": "corepack pnpm --filter @viralforge/shared build && corepack pnpm --filter @viralforge/database build && corepack pnpm --filter @viralforge/clip-analyzer build && corepack pnpm --filter @viralforge/render-engine build && corepack pnpm --filter @viralforge/api build && corepack pnpm --filter @viralforge/worker build && corepack pnpm --filter @viralforge/web build",
+        "typecheck": "corepack pnpm -r typecheck",
+        "lint": "eslint apps/api apps/worker packages scripts --ext .ts,.tsx --ignore-pattern '**/dist/**' --ignore-pattern '**/build/**' && corepack pnpm --filter @viralforge/web lint",
+        "lint:strict": "eslint apps/api apps/worker packages scripts --ext .ts,.tsx --ignore-pattern '**/dist/**' --ignore-pattern '**/build/**' --max-warnings 0 && corepack pnpm --filter @viralforge/web exec eslint src/ --max-warnings 0",
+        "test": "corepack pnpm -r test",
+        "db:generate": "corepack pnpm --filter @viralforge/database db:generate",
+        "db:migrate": "corepack pnpm --filter @viralforge/database db:migrate",
+        "db:seed": "corepack pnpm --filter @viralforge/database db:seed",
+        "phase0:test": "tsx scripts/test-clip-analyzer.ts",
+        "phase0:test:offline": "tsx scripts/test-clip-analyzer.ts --offline",
+        "baseline:pipeline": "corepack pnpm --filter @viralforge/database exec tsx ../../scripts/pipeline-baseline-report.ts",
+        "smoke:security": "tsx scripts/security-smoke-test.ts",
+        "services:install": "bash scripts/install-systemd-services.sh",
+        "dataset:evaluate": "tsx scripts/dataset-evaluate.ts",
+        "test:e2e": "playwright test --config=apps/web/playwright.config.ts",
+        "test:e2e:ui": "playwright test --ui --config=apps/web/playwright.config.ts",
+        "release:check": "node scripts/release-check.mjs",
+        "release:check:quick": "node scripts/release-check.mjs --skip-install --skip-build",
+        "release:check:ci": "node scripts/release-check.mjs --strict",
+        "stripe:setup": "tsx scripts/stripe-setup.ts",
+        "ssl:setup": "bash infra/scripts/ssl-setup.sh",
+        "admin:grant": "corepack pnpm --filter @viralforge/database exec tsx ../../scripts/make-admin.ts"
+    },
+    "devDependencies": {
+        "@playwright/test": "^1.60.0",
+        "@types/node": "^20.17.57",
+        "tsx": "^4.20.6",
+        "typescript": "5.8.3"
+    },
+    "pnpm": {
+        "overrides": {
+            "file-type": "21.3.2",
+            "multer": "2.1.1",
+            "lodash": "4.18.1",
+            "postcss": "8.5.10",
+            "qs": "6.15.2",
+            "ws": "8.20.1"
+        }
+    }
+}

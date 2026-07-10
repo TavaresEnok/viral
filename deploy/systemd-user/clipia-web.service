@@ -1,0 +1,25 @@
+[Unit]
+Description=ViralForge web app
+Requires=clipia-api.service
+After=clipia-api.service network.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+# Roda o build de produção (`next start`), NÃO `next dev`. Estável e leve.
+# Faça o build no deploy: `corepack pnpm --filter @viralforge/web build`.
+# Lembrete: NEXT_PUBLIC_* é embutido no build — rebuild ao mudar a API URL.
+WorkingDirectory=/home/ia/Documents/projetos/ViralForge
+EnvironmentFile=/home/ia/Documents/projetos/ViralForge/.env
+Environment=WEB_HOST=0.0.0.0
+Environment=WEB_PORT=3002
+Environment=PATH=/home/ia/.nvm/versions/node/v20.20.2/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/home/ia/.nvm/versions/node/v20.20.2/bin/corepack pnpm --filter @viralforge/web start
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

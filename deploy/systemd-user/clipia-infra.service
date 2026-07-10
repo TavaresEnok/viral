@@ -1,0 +1,15 @@
+[Unit]
+StartLimitIntervalSec=300
+StartLimitBurst=5
+Description=ViralForge infrastructure containers
+After=default.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/ia/Documents/projetos/ViralForge
+ExecStart=/usr/bin/docker compose -f /home/ia/Documents/projetos/ViralForge/infra/docker-compose.yml up -d
+ExecStop=/usr/bin/docker compose -f /home/ia/Documents/projetos/ViralForge/infra/docker-compose.yml down
+RemainAfterExit=yes
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,258 @@
+/* ============================================================
+   VIRAL — Redesign tokens (drop-in replacement para apps/web/src/app/globals.css)
+   Direção: dark-first · lime elétrico #C8F542 · magenta #FF4FA3 (só gradientes)
+   Fontes: Bricolage Grotesque (display) · Instrument Sans (UI) · Spline Sans Mono (números)
+   ============================================================ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Superfícies */
+  --bg-base: #0C0C11;
+  --bg-surface: #14141B;
+  --bg-elevated: #1C1C26;
+  --bg-overlay: #22222E;
+  --hairline-subtle: #26262F;
+  --hairline-strong: #37373F;
+
+  /* Texto */
+  --ink-primary: #F4F4F6;
+  --ink-secondary: #A6A6B2;
+  --ink-tertiary: #6E6E7A;
+
+  /* Ação — lime é a ÚNICA cor de ação */
+  --accent: #C8F542;
+  --accent-hover: #D6FF55;
+  --accent-text: #D6FF55;   /* texto/borda lime sobre fundo escuro */
+  --on-accent: #10120A;     /* texto sobre fundo lime */
+  --accent-glow: rgba(200, 245, 66, 0.20);
+
+  /* Especial — apenas gradientes de progresso e acentos raros */
+  --special: #FF4FA3;
+
+  /* Sinais */
+  --success: #C8F542;
+  --warning: #FFC24B;
+  --danger: #FF6B6B;
+  --info: #6FA8FF;
+
+  /* Aliases RGB para opacidade no Tailwind (rgb(var(--x) / <alpha>)) */
+  --bg-base-rgb: 12 12 17;
+  --bg-surface-rgb: 20 20 27;
+  --bg-elevated-rgb: 28 28 38;
+  --bg-overlay-rgb: 34 34 46;
+  --ink-primary-rgb: 244 244 246;
+  --ink-secondary-rgb: 166 166 178;
+  --ink-tertiary-rgb: 110 110 122;
+  --hairline-subtle-rgb: 38 38 47;
+  --hairline-strong-rgb: 55 55 63;
+  --accent-rgb: 200 245 66;
+  --accent-hover-rgb: 214 255 85;
+  --special-rgb: 255 79 163;
+  --signal-positive-rgb: 200 245 66;
+  --signal-caution-rgb: 255 194 75;
+  --signal-negative-rgb: 255 107 107;
+  --signal-info-rgb: 111 168 255;
+
+  --signal-positive: var(--success);
+  --signal-caution: var(--warning);
+  --signal-negative: var(--danger);
+  --signal-info: var(--info);
+
+  /* Movimento (mantido do sistema anterior) */
+  --duration-fast: 150ms;
+  --duration-normal: 220ms;
+  --duration-slow: 360ms;
+  --ease-entrance: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-reveal: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-defer: cubic-bezier(0.33, 1, 0.68, 1);
+  --ease-settle: cubic-bezier(0.19, 1, 0.22, 1);
+  --ease-out-expo: var(--ease-entrance);
+
+  --glass-bg: rgba(20, 20, 27, 0.78);
+  --glass-border: rgba(255, 255, 255, 0.06);
+  --z-dropdown: 50;
+  --z-modal: 100;
+  --z-toast: 200;
+
+  /* Placeholder de thumbnail (stripes sutis) */
+  --thumb-stripe: repeating-linear-gradient(135deg, rgba(255,255,255,.05) 0 10px, rgba(255,255,255,0) 10px 20px);
+}
+
+.light {
+  --bg-base: #F2F2EC;
+  --bg-surface: #FFFFFF;
+  --bg-elevated: #E9E9E0;
+  --bg-overlay: #E1E1D8;
+  --hairline-subtle: #E0E0D5;
+  --hairline-strong: #C9C9BD;
+  --ink-primary: #15151A;
+  --ink-secondary: #5C5C66;
+  --ink-tertiary: #94949E;
+
+  /* Lime continua como FUNDO (texto #10120A).
+     Para texto/borda lime sobre fundo claro, usar --accent-text. */
+  --accent: #C8F542;
+  --accent-hover: #BCE93A;
+  --accent-text: #587F00;
+  --on-accent: #10120A;
+  --accent-glow: rgba(150, 200, 30, 0.28);
+  --special: #E0337F;
+
+  --bg-base-rgb: 242 242 236;
+  --bg-surface-rgb: 255 255 255;
+  --bg-elevated-rgb: 233 233 224;
+  --bg-overlay-rgb: 225 225 216;
+  --ink-primary-rgb: 21 21 26;
+  --ink-secondary-rgb: 92 92 102;
+  --ink-tertiary-rgb: 148 148 158;
+  --hairline-subtle-rgb: 224 224 213;
+  --hairline-strong-rgb: 201 201 189;
+  --accent-rgb: 200 245 66;
+  --accent-hover-rgb: 188 233 58;
+  --special-rgb: 224 51 127;
+  --signal-positive-rgb: 88 127 0;
+  --signal-caution-rgb: 196 132 12;
+  --signal-negative-rgb: 217 64 64;
+  --signal-info-rgb: 43 108 219;
+
+  --glass-bg: rgba(255, 255, 255, 0.82);
+  --glass-border: rgba(0, 0, 0, 0.06);
+  --thumb-stripe: repeating-linear-gradient(135deg, rgba(0,0,0,.04) 0 10px, rgba(0,0,0,0) 10px 20px);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+@layer base {
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-bricolage), 'Bricolage Grotesque', system-ui, sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+}
+
+html {
+  background: var(--bg-base);
+}
+
+body {
+  min-height: 100vh;
+  color: var(--ink-primary);
+  background:
+    radial-gradient(circle at 50% -10%, rgba(200, 245, 66, 0.07), transparent 30rem),
+    var(--bg-base);
+  font-variant-numeric: tabular-nums;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.light body {
+  background:
+    radial-gradient(circle at 50% -10%, rgba(150, 200, 30, 0.08), transparent 30rem),
+    var(--bg-base);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--hairline-strong) transparent;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--hairline-strong);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-tertiary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.font-mono-num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Barra de progresso padrão: gradiente lime → magenta */
+.progress-fill {
+  background: linear-gradient(90deg, var(--accent), var(--special));
+  border-radius: 999px;
+}
+
+/* Animações decorativas do redesign */
+@keyframes vr-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+@keyframes vr-float {
+  0%, 100% { transform: translateY(0) rotate(var(--tilt, 0deg)); }
+  50% { transform: translateY(-10px) rotate(var(--tilt, 0deg)); }
+}
+@keyframes vr-scan {
+  0% { top: -18%; }
+  100% { top: 112%; }
+}
+@keyframes vr-marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
+  animation: shimmer 1.6s infinite;
+}
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}

@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "esModuleInterop": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "types": [
+      "node"
+    ],
+    "baseUrl": ".",
+    "paths": {
+      "@viralforge/clip-analyzer": [
+        "packages/clip-analyzer/src/index.ts"
+      ],
+      "@viralforge/database": [
+        "packages/database/src/index.ts"
+      ],
+      "@viralforge/shared": [
+        "packages/shared/src/index.ts"
+      ],
+      "@viralforge/render-engine": [
+        "packages/render-engine/src/index.ts"
+      ]
+    }
+  }
+}

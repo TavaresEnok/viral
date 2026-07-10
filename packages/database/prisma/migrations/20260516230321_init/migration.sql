@@ -1,0 +1,9 @@
+-- CreateEnum
+CREATE TYPE "RenderLayout" AS ENUM ('BLURRED_BACKGROUND', 'FILL_CROP', 'CENTER_FIT', 'TOP_FRAME');
+
+-- CreateEnum
+CREATE TYPE "CaptionTheme" AS ENUM ('CLEAN_FOOTER', 'BOLD_FOOTER', 'CREATOR_BOX', 'MINIMAL');
+
+-- AlterTable
+ALTER TABLE "Project" ADD COLUMN     "captionTheme" "CaptionTheme" NOT NULL DEFAULT 'CLEAN_FOOTER',
+ADD COLUMN     "renderLayout" "RenderLayout" NOT NULL DEFAULT 'BLURRED_BACKGROUND';
