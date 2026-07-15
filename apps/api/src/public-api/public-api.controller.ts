@@ -1,7 +1,15 @@
 import { ApiTags } from '@nestjs/swagger';
-import { Controller, Get, Param, Headers, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Param, Headers, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { IsUrl } from 'class-validator';
 import { PublicApiService } from './public-api.service.js';
 import { PrismaService } from '../prisma.service.js';
+import { ProjectsService } from '../projects/projects.service.js';
+import { CreateProjectDto } from '../projects/dto.js';
+
+class CreateApiProjectDto extends CreateProjectDto {
+  @IsUrl({ require_protocol: true, protocols: ['https'] })
+  sourceUrl!: string;
+}
 
 @ApiTags('public-api')
 @Controller('api/v1')
@@ -9,6 +17,7 @@ export class PublicApiController {
   constructor(
     private readonly publicApiService: PublicApiService,
     private readonly prisma: PrismaService,
+    private readonly projectsService: ProjectsService,
   ) {}
 
   private async authenticate(apiKey: string | undefined): Promise<string> {
@@ -26,6 +35,23 @@ export class PublicApiController {
       take: 50,
     });
     return { projects };
+  }
+
+  @Post('projects')
+  async createProject(@Headers('x-api-key') apiKey: string, @Body() dto: CreateApiProjectDto) {
+    const userId = await this.authenticate(apiKey);
+    const normalizedUrl = this.projectsService.normalizeYoutubeUrl(dto.sourceUrl);
+    const project = await this.projectsService.create(userId, dto);
+    const processing = await this.projectsService.attachYoutubeUrl(userId, project.id, normalizedUrl);
+    return {
+      project: {
+        id: processing.id,
+        title: processing.title,
+        status: processing.status,
+        progress: processing.progress,
+        createdAt: processing.createdAt,
+      },
+    };
   }
 
   @Get('projects/:id')
@@ -51,5 +77,18 @@ export class PublicApiController {
       orderBy: [{ finalScore: 'desc' }, { viralScore: 'desc' }],
     });
     return { clips };
+  }
+
+  @Post('projects/:id/retry')
+  async retryProject(@Headers('x-api-key') apiKey: string, @Param('id') projectId: string) {
+    const userId = await this.authenticate(apiKey);
+    const project = await this.projectsService.retry(userId, projectId);
+    return { project };
+  }
+
+  @Delete('projects/:id')
+  async deleteProject(@Headers('x-api-key') apiKey: string, @Param('id') projectId: string) {
+    const userId = await this.authenticate(apiKey);
+    return this.projectsService.remove(userId, projectId);
   }
 }

@@ -25,6 +25,7 @@
         "smoke:security": "tsx scripts/security-smoke-test.ts",
         "services:install": "bash scripts/install-systemd-services.sh",
         "dataset:evaluate": "tsx scripts/dataset-evaluate.ts",
+        "model:compare": "tsx scripts/model-compare.ts",
         "test:e2e": "playwright test --config=apps/web/playwright.config.ts",
         "test:e2e:ui": "playwright test --ui --config=apps/web/playwright.config.ts",
         "release:check": "node scripts/release-check.mjs",

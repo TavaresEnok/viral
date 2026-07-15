@@ -82,6 +82,7 @@ export class VideoProcessorService {
         let llmCostForMetrics: number | null = null;
         let rawClipCountForMetrics: number | null = null;
         let validatedClipCountForMetrics: number | null = null;
+        let clipFallbackUsedForMetrics = false;
         let renderSummaryForMetrics: RenderClipsSummary | null = null;
 
         log("Iniciando processamento do projeto");
@@ -280,6 +281,7 @@ export class VideoProcessorService {
                     `Analisador retornou ${rawClips.length} corte(s), mas nenhum passou na validação. Usando fallback operacional.`,
                     { stage: "ANALYZING_CLIPS", rawClipCount: rawClips.length },
                 );
+                clipFallbackUsedForMetrics = true;
                 validatedClips = this.metrics.measureSync(stageTimings, "fallback_clips_sec", () =>
                     this.clips.buildOperationalFallbackClips(
                         transcriptWithWords,
@@ -390,7 +392,7 @@ export class VideoProcessorService {
                 failedRenderCount: renderSummaryForMetrics.failed,
                 renderEngines: renderSummaryForMetrics.engines,
                 remoteGpuUsed: renderSummaryForMetrics.remoteGpuUsed,
-                fallbackUsed: renderSummaryForMetrics.fallbackUsed,
+                fallbackUsed: clipFallbackUsedForMetrics || renderSummaryForMetrics.fallbackUsed,
             });
         } catch (error) {
             const message =
@@ -424,7 +426,7 @@ export class VideoProcessorService {
                 failedRenderCount: renderSummaryForMetrics?.failed ?? null,
                 renderEngines: renderSummaryForMetrics?.engines,
                 remoteGpuUsed: renderSummaryForMetrics?.remoteGpuUsed ?? null,
-                fallbackUsed: renderSummaryForMetrics?.fallbackUsed ?? null,
+                fallbackUsed: clipFallbackUsedForMetrics || (renderSummaryForMetrics?.fallbackUsed ?? null),
             });
             throw error;
         }
@@ -439,6 +441,17 @@ export class VideoProcessorService {
 
         log("Iniciando publicação do clip");
         try {
+            // Idempotência: se um retry/replay chegar depois do upload ter dado
+            // certo, não posta de novo na plataforma.
+            const existingPublication = await this.prisma.publishedClip.findFirst({
+                where: { clipId: payload.clipId, socialAccountId: payload.socialAccountId },
+                select: { status: true },
+            });
+            if (existingPublication?.status === "PUBLISHED") {
+                log("Publicação já concluída anteriormente; job duplicado ignorado.");
+                return;
+            }
+
             const clip = await this.prisma.clip.findUniqueOrThrow({ where: { id: payload.clipId } });
             if (!clip.videoPath) throw new Error("Clip não possui arquivo de vídeo");
 

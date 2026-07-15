@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "name": "pt-br-golden-example",
+  "samples": [
+    {
+      "id": "podcast-001",
+      "durationSec": 180,
+      "referenceClips": [
+        { "start": 12, "end": 48, "relevance": 5 },
+        { "start": 92, "end": 137, "relevance": 4 }
+      ]
+    },
+    {
+      "id": "aula-001",
+      "durationSec": 150,
+      "referenceClips": [
+        { "start": 35, "end": 79, "relevance": 5 }
+      ]
+    }
+  ]
+}
+

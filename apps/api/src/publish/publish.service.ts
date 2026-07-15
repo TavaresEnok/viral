@@ -16,6 +16,7 @@ import {
   getInstagramRedirectUri,
   signOAuthState,
 } from '@viralforge/shared';
+import { Prisma, PublishStatus, SocialPlatform } from '@prisma/client';
 
 // Categorias atribuídas pelo worker a clips gerados sem curadoria da IA
 // (fallback operacional e modo offline). Ver clip-persistence.service.ts.
@@ -98,11 +99,107 @@ export class PublishService {
         socialAccount: { userId },
       },
       include: {
-        clip: { select: { id: true, title: true, duration: true, thumbnailPath: true } },
-        socialAccount: { select: { platform: true, platformAccountName: true } },
+        clip: { select: { id: true, projectId: true, title: true, duration: true, thumbnailPath: true } },
+        socialAccount: { select: { id: true, platform: true, platformAccountName: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  async listCalendar(
+    userId: string,
+    from?: string,
+    to?: string,
+    status?: PublishStatus,
+    platform?: SocialPlatform,
+  ) {
+    const now = new Date();
+    const rangeStart = from ? new Date(from) : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const rangeEnd = to ? new Date(to) : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+    if (Number.isNaN(rangeStart.getTime()) || Number.isNaN(rangeEnd.getTime()) || rangeEnd <= rangeStart) {
+      throw new BadRequestException('Intervalo do calendário inválido');
+    }
+    if (rangeEnd.getTime() - rangeStart.getTime() > 370 * 24 * 60 * 60 * 1000) {
+      throw new BadRequestException('O calendário aceita intervalos de até 370 dias');
+    }
+
+    const where: Prisma.PublishedClipWhereInput = {
+      socialAccount: { userId },
+      ...(status ? { status } : {}),
+      ...(platform ? { platform } : {}),
+      OR: [
+        { scheduledAt: { gte: rangeStart, lt: rangeEnd } },
+        { publishedAt: { gte: rangeStart, lt: rangeEnd } },
+        {
+          scheduledAt: null,
+          publishedAt: null,
+          createdAt: { gte: rangeStart, lt: rangeEnd },
+        },
+      ],
+    };
+
+    return this.prisma.publishedClip.findMany({
+      where,
+      include: {
+        clip: { select: { id: true, projectId: true, title: true, duration: true, thumbnailPath: true } },
+        socialAccount: { select: { id: true, platform: true, platformAccountName: true } },
+      },
+      orderBy: [{ scheduledAt: 'asc' }, { publishedAt: 'asc' }, { createdAt: 'asc' }],
+    });
+  }
+
+  async reschedule(userId: string, publishedClipId: string, scheduledAt: string) {
+    const parsedSchedule = new Date(scheduledAt);
+    if (Number.isNaN(parsedSchedule.getTime()) || parsedSchedule <= new Date()) {
+      throw new BadRequestException('A nova data de agendamento precisa ser válida e futura');
+    }
+    const item = await this.prisma.publishedClip.findFirst({
+      where: { id: publishedClipId, socialAccount: { userId } },
+      include: { clip: { select: { category: true } } },
+    });
+    if (!item) throw new NotFoundException('Publicação agendada não encontrada');
+    if (item.status !== PublishStatus.PENDING || !item.scheduledAt) {
+      throw new BadRequestException('Somente publicações pendentes e agendadas podem ser reagendadas');
+    }
+    if (DEGRADED_CLIP_CATEGORIES.has(item.clip.category)) {
+      throw new BadRequestException('Cortes em modo degradado não podem ser agendados');
+    }
+
+    const updated = await this.prisma.publishedClip.updateMany({
+      where: { id: item.id, status: PublishStatus.PENDING, scheduledAt: { not: null } },
+      data: { scheduledAt: parsedSchedule },
+    });
+    if (updated.count === 0) throw new BadRequestException('A publicação já começou e não pode mais ser reagendada');
+    await this.audit.record({
+      userId,
+      action: 'publish.reschedule_clip',
+      entityType: 'publishedClip',
+      entityId: item.id,
+      metadata: { previousScheduledAt: item.scheduledAt.toISOString(), scheduledAt: parsedSchedule.toISOString() },
+    });
+    return this.prisma.publishedClip.findUnique({ where: { id: item.id } });
+  }
+
+  async cancelScheduled(userId: string, publishedClipId: string) {
+    const item = await this.prisma.publishedClip.findFirst({
+      where: { id: publishedClipId, socialAccount: { userId } },
+    });
+    if (!item) throw new NotFoundException('Publicação agendada não encontrada');
+    if (item.status !== PublishStatus.PENDING || !item.scheduledAt) {
+      throw new BadRequestException('Somente publicações pendentes e agendadas podem ser canceladas');
+    }
+    const removed = await this.prisma.publishedClip.deleteMany({
+      where: { id: item.id, status: PublishStatus.PENDING, scheduledAt: { not: null } },
+    });
+    if (removed.count === 0) throw new BadRequestException('A publicação já começou e não pode mais ser cancelada');
+    await this.audit.record({
+      userId,
+      action: 'publish.cancel_scheduled_clip',
+      entityType: 'publishedClip',
+      entityId: item.id,
+      metadata: { scheduledAt: item.scheduledAt.toISOString(), platform: item.platform },
+    });
+    return { ok: true };
   }
 
   async publishClip(userId: string, clipId: string, socialAccountId: string, scheduledAt?: string) {

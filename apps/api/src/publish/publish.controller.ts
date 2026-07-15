@@ -1,6 +1,7 @@
 import { ApiTags } from '@nestjs/swagger';
-import { Controller, Get, Post, Delete, Param, Body, UseGuards, Query, Res, HttpCode } from '@nestjs/common';
-import { IsString, IsNotEmpty, IsOptional, IsISO8601 } from 'class-validator';
+import { Controller, Get, Post, Patch, Delete, Param, Body, UseGuards, Query, Res, HttpCode } from '@nestjs/common';
+import { IsString, IsNotEmpty, IsOptional, IsISO8601, IsEnum } from 'class-validator';
+import { PublishStatus, SocialPlatform } from '@prisma/client';
 import { JwtAuthGuard } from '../common/jwt-auth.guard.js';
 import { CurrentUser } from '../common/current-user.decorator.js';
 import type { RequestUser } from '../common/request-user.js';
@@ -16,6 +17,29 @@ class PublishClipDto {
   @IsOptional()
   @IsISO8601()
   scheduledAt?: string;
+}
+
+class CalendarQueryDto {
+  @IsOptional()
+  @IsISO8601()
+  from?: string;
+
+  @IsOptional()
+  @IsISO8601()
+  to?: string;
+
+  @IsOptional()
+  @IsEnum(PublishStatus)
+  status?: PublishStatus;
+
+  @IsOptional()
+  @IsEnum(SocialPlatform)
+  platform?: SocialPlatform;
+}
+
+class RescheduleDto {
+  @IsISO8601()
+  scheduledAt!: string;
 }
 
 class RefreshYouTubeDto {
@@ -73,6 +97,24 @@ export class PublishController {
   @UseGuards(JwtAuthGuard)
   listPublished(@CurrentUser() user: RequestUser) {
     return this.publishService.listPublishedClips(user.id);
+  }
+
+  @Get('calendar')
+  @UseGuards(JwtAuthGuard)
+  listCalendar(@CurrentUser() user: RequestUser, @Query() query: CalendarQueryDto) {
+    return this.publishService.listCalendar(user.id, query.from, query.to, query.status, query.platform);
+  }
+
+  @Patch('schedule/:id')
+  @UseGuards(JwtAuthGuard)
+  reschedule(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() dto: RescheduleDto) {
+    return this.publishService.reschedule(user.id, id, dto.scheduledAt);
+  }
+
+  @Delete('schedule/:id')
+  @UseGuards(JwtAuthGuard)
+  cancelScheduled(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.publishService.cancelScheduled(user.id, id);
   }
 
   @Post('clip/:clipId')

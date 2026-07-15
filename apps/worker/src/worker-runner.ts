@@ -35,8 +35,20 @@ export class WorkerRunner implements OnModuleDestroy {
             jobId: job.id,
             payload: job.data,
           });
+          // Payload inválido é contrato quebrado entre API e worker: vai para a
+          // DLQ e falha explicitamente — nunca "conclui" em silêncio.
+          await this.dlq?.add(
+            job.name ?? 'invalid-payload',
+            {
+              ...(typeof job.data === 'object' && job.data ? job.data : {}),
+              _originalJobId: job.id,
+              _invalidPayload: validation.error,
+              _failedAt: new Date().toISOString(),
+            },
+            { removeOnComplete: { count: 100 }, removeOnFail: { count: 100 } },
+          );
           await job.discard();
-          return;
+          throw new Error(`Payload inválido: ${validation.error}`);
         }
 
         this.logger.log({

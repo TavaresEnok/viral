@@ -56,6 +56,30 @@ export class ApiError extends Error {
     }
 }
 
+export interface PublishedClip {
+    id: string;
+    status: string;
+    platform: string;
+    platformPostUrl: string | null;
+    platformPostId: string | null;
+    errorMessage: string | null;
+    scheduledAt: string | null;
+    publishedAt: string | null;
+    createdAt: string;
+    clip: {
+        id: string;
+        projectId: string;
+        title: string;
+        duration: number;
+        thumbnailPath: string | null;
+    };
+    socialAccount: {
+        id: string;
+        platform: string;
+        platformAccountName: string | null;
+    };
+}
+
 async function refreshSession(): Promise<AuthResponse> {
     if (!refreshPromise) {
         refreshPromise = fetchWithTimeout(`${BASE_URL}/auth/refresh`, {
@@ -591,14 +615,25 @@ export const api = {
                 method: "DELETE",
             }),
         publishedClips: () =>
-            request<
-                Array<{
-                    id: string;
-                    clip: { id: string; title: string };
-                    status: string;
-                    platformPostUrl: string | null;
-                }>
-            >("/publish/clips"),
+            request<PublishedClip[]>("/publish/clips"),
+        calendar: (params: {
+            from: string;
+            to: string;
+            status?: string;
+            platform?: string;
+        }) => {
+            const query = new URLSearchParams({ from: params.from, to: params.to });
+            if (params.status) query.set("status", params.status);
+            if (params.platform) query.set("platform", params.platform);
+            return request<PublishedClip[]>(`/publish/calendar?${query.toString()}`);
+        },
+        reschedule: (id: string, scheduledAt: string) =>
+            request<{ id: string }>(`/publish/schedule/${id}`, {
+                method: "PATCH",
+                body: JSON.stringify({ scheduledAt }),
+            }),
+        cancelScheduled: (id: string) =>
+            request<{ ok: true }>(`/publish/schedule/${id}`, { method: "DELETE" }),
         publishClip: (
             clipId: string,
             socialAccountId: string,

@@ -316,7 +316,7 @@ export class ProjectsService {
         return project;
     }
 
-    private normalizeYoutubeUrl(value: string) {
+    normalizeYoutubeUrl(value: string) {
         let url: URL;
         try {
             url = new URL(value);

@@ -126,6 +126,7 @@ async function bootstrap() {
   if (trustProxy && express.set) {
     express.set('trust proxy', trustProxy === 'true' ? 1 : trustProxy);
   }
+  express.set?.('x-powered-by', false);
   app.use(requestIdMiddleware);
   app.use(securityHeaders);
   const allowedOrigins = resolveAllowedOrigins();

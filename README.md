@@ -1,6 +1,10 @@
 # ViralForge
 
-MVP local para encontrar momentos virais em vídeos longos, transcrever, analisar, cortar em 9:16 com fundo desfocado, queimar legenda, gerar thumb e disponibilizar download.
+Plataforma SaaS de reaproveitamento de vídeo: encontra momentos virais em vídeos longos (upload ou YouTube), transcreve, analisa com IA, corta em 9:16 com reenquadramento por detecção facial, queima legendas, e permite editar, exportar e **publicar direto em YouTube/TikTok/Instagram** — com autenticação completa, quotas por plano, billing (Stripe), brand kit, API pública, admin de IA global e telemetria de pipeline.
+
+**Produção:** `http://168.194.13.20` (web na porta 80 → 3002; API interna na 3001 via rewrite `/api`). Serviços via systemd: `modulo-ia-api`, `modulo-ia-web`, `modulo-ia-worker`, `node-agent` (render acelerado, porta 9873 restrita a localhost).
+
+Estado por área: pipeline de cortes, auth, quotas e publicação = **estável**; billing Stripe e app mobile (`apps/mobile`, Capacitor) = **beta/experimental**. Fallback de IA é controlado por `ALLOW_AI_FALLBACK` (ver `.env.example`). Qualidade de modelo é medida com `corepack pnpm model:compare` (golden set humano em `samples/evaluation/`).
 
 ## Requisitos
 

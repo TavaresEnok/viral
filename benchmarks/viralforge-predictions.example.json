@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "system": "ViralForge example",
+  "generatedAt": "2026-07-13T00:00:00.000Z",
+  "samples": [
+    {
+      "id": "podcast-001",
+      "predictedClips": [
+        { "start": 10, "end": 49 },
+        { "start": 95, "end": 139 }
+      ]
+    },
+    {
+      "id": "aula-001",
+      "predictedClips": [
+        { "start": 37, "end": 80 }
+      ]
+    }
+  ]
+}

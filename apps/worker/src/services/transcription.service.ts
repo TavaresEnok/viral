@@ -149,8 +149,13 @@ export class TranscriptionService {
     let accumulatedOffset = 0;
     try {
       for (let i = 0; i < files.length; i += 1) {
-        const transcript = await this.transcribeSingle(resolve(chunkDir, files[i]), language, apiKey, model, baseURL);
-        const chunkDuration = transcript.duration || 600;
+        const chunkPath = resolve(chunkDir, files[i]);
+        const transcript = await this.transcribeSingle(chunkPath, language, apiKey, model, baseURL);
+        // Offset baseado na duração REAL do chunk (ffprobe): a duração vinda do
+        // provedor pode ser menor (silêncio no fim) e deslocaria as legendas de
+        // todos os chunks seguintes.
+        const chunkDuration =
+          (await this.ffmpeg.probeDuration(chunkPath).catch(() => 0)) || transcript.duration || 600;
         transcripts.push({
           ...transcript,
           segments: transcript.segments.map((segment) => ({

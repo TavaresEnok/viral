@@ -23,6 +23,13 @@ iptables -t nat -D OUTPUT -d 168.194.15.42 -p tcp --dport 3001 -j DNAT --to-dest
 iptables -t nat -I OUTPUT 3 -d 168.194.15.42 -p tcp --dport 3002 -j DNAT --to-destination 127.0.0.1:3002
 iptables -t nat -I OUTPUT 4 -d 168.194.15.42 -p tcp --dport 3001 -j DNAT --to-destination 127.0.0.1:3001
 
+# ─── Acesso sem porta: 80 → 3002 (web) no IP principal ───────────────────────
+# Escopado ao IP público para não capturar tráfego HTTP de saída dos containers.
+iptables -t nat -D PREROUTING -d 168.194.13.20 -p tcp --dport 80 -j REDIRECT --to-port 3002 2>/dev/null || true
+iptables -t nat -A PREROUTING -d 168.194.13.20 -p tcp --dport 80 -j REDIRECT --to-port 3002
+iptables -t nat -D OUTPUT -d 168.194.13.20 -p tcp --dport 80 -j DNAT --to-destination 127.0.0.1:3002 2>/dev/null || true
+iptables -t nat -A OUTPUT -d 168.194.13.20 -p tcp --dport 80 -j DNAT --to-destination 127.0.0.1:3002
+
 # ─── node_agent (porta 9873) ──────────────────────────────────────────────────
 # Aceita apenas conexões do localhost (modulo_ia acessa via 127.0.0.1).
 iptables -D INPUT -p tcp --dport 9873 -j DROP 2>/dev/null || true

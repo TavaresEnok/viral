@@ -40,10 +40,11 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
 
   @Cron(CronExpression.EVERY_MINUTE)
   async checkScheduledPublishes() {
+    const dueAt = new Date();
     const due = await this.prisma.publishedClip.findMany({
       where: {
         status: 'PENDING',
-        scheduledAt: { lte: new Date() },
+        scheduledAt: { lte: dueAt },
       },
       include: {
         clip: { select: { projectId: true } },
@@ -53,8 +54,10 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
 
     for (const item of due) {
       // Claim atômico: se outra instância/tick já pegou este item, pula.
+      // Revalida scheduledAt para não publicar um item que foi reagendado
+      // entre o findMany e este claim.
       const claimed = await this.prisma.publishedClip.updateMany({
-        where: { id: item.id, status: 'PENDING' },
+        where: { id: item.id, status: 'PENDING', scheduledAt: { lte: dueAt } },
         data: { status: 'PUBLISHING' },
       });
       if (claimed.count === 0) continue;

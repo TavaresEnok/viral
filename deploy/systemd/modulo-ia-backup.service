@@ -1,0 +1,12 @@
+[Unit]
+Description=ModuloIA Backup (Postgres + storage + Redis)
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/ajustconsulting/projeto_enok_microservicos/modulo_ia
+ExecStart=/bin/bash scripts/backup.sh /var/backups/viralforge
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=modulo-ia-backup
