@@ -37,6 +37,8 @@ type RemoteTranscriptionResponse = {
   timings?: Record<string, unknown>;
   cache_hit?: boolean;
   segments?: Array<{ start: number; end: number; text: string }>;
+  /** Timestamps por palavra (node_agent com word_timestamps=True). */
+  words?: Array<{ word?: string; start: number; end: number; probability?: number; segment_index?: number }>;
 };
 
 @Injectable()
@@ -308,12 +310,25 @@ export class TranscriptionService {
     const transcribeSec = this.numberOrNull(timings.transcribe_sec);
     const fallbackUsed = payload.device_used === 'cpu' || typeof timings.fallback_reason === 'string';
 
+    // Palavras REAIS do ASR quando o node as devolve (word_timestamps=True).
+    // approximateWords divide o segmento igualmente entre as palavras — tempo
+    // inventado, que dessincroniza legenda karaokê. Só usar como último caso.
+    const realWords: WordSegment[] = (payload.words ?? [])
+      .map((word) => ({
+        word: cleanText(String(word.word ?? '')),
+        start: Number(word.start),
+        end: Number(word.end),
+        confidence: typeof word.probability === 'number' ? word.probability : null,
+        segmentIndex: typeof word.segment_index === 'number' ? word.segment_index : null,
+      }))
+      .filter((word) => word.word && Number.isFinite(word.start) && Number.isFinite(word.end));
+
     return {
       language: payload.language ?? language,
       duration,
       fullText: segments.map((segment) => segment.text).join(' '),
       segments,
-      words: this.approximateWords(segments),
+      words: realWords.length ? realWords : this.approximateWords(segments),
       remoteAsr: {
         provider: 'remote_accel',
         model: payload.model ?? null,
