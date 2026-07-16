@@ -382,9 +382,19 @@ export const api = {
         remove: (clipId: string) =>
             request<{ ok: true }>(`/clips/${clipId}`, { method: "DELETE" }),
         getSegments: (clipId: string) =>
-            request<{ segments: Array<{ start: number; end: number; text: string }>; custom: boolean }>(
-                `/clips/${clipId}/segments`,
-            ),
+            request<{
+                segments: Array<{ start: number; end: number; text: string }>;
+                custom: boolean;
+                /** youtube_captions | whisper_local | manual | null */
+                source: string | null;
+                /** PROCESSING | COMPLETED | FAILED | null */
+                status: string | null;
+                error: string | null;
+            }>(`/clips/${clipId}/segments`),
+        retranscribe: (clipId: string) =>
+            request<{ ok: true; status: "PROCESSING" }>(`/clips/${clipId}/retranscribe`, {
+                method: "POST",
+            }),
         updateSegments: (
             clipId: string,
             segments: Array<{ start: number; end: number; text: string }>,

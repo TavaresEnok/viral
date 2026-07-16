@@ -1,7 +1,8 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { LlmClipAnalyzerService, type LlmTelemetry } from "@viralforge/clip-analyzer";
 import type { QueueJobPayload } from "@viralforge/shared";
-import { resolve } from "node:path";
+import { unlink } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { aiFallbackAllowed, computeClipTarget, type RenderClipsSummary, type TranscriptWithMetadata } from "../types/pipeline.types.js";
 import { ApiKeyService } from "./api-key.service.js";
@@ -14,6 +15,7 @@ import { PipelineMetricsService } from "./pipeline-metrics.service.js";
 import { PrismaService } from "./prisma.service.js";
 import { RenderOrchestrationService } from "./render-orchestration.service.js";
 import { TikTokPublishService } from "./tiktok-publish.service.js";
+import { TranscriptionService } from "./transcription.service.js";
 import { TranscriptOrchestrationService } from "./transcript-orchestration.service.js";
 import { YoutubeDownloadService } from "./youtube-download.service.js";
 import { YoutubePublishService } from "./youtube-publish.service.js";
@@ -52,6 +54,7 @@ export class VideoProcessorService {
         private readonly metrics: PipelineMetricsService,
         private readonly render: RenderOrchestrationService,
         private readonly feedbackProfile: FeedbackProfileService,
+        private readonly transcription: TranscriptionService,
     ) {}
 
     async process(payload: QueueJobPayload, jobId: string) {
@@ -61,6 +64,10 @@ export class VideoProcessorService {
         }
         if (payload.jobType === "PUBLISH_CLIP") {
             await this.publishClip(payload, jobId);
+            return;
+        }
+        if (payload.jobType === "RETRANSCRIBE_CLIP") {
+            await this.retranscribeClip(payload, jobId);
             return;
         }
         await this.processProject(payload, jobId);
@@ -428,6 +435,89 @@ export class VideoProcessorService {
                 remoteGpuUsed: renderSummaryForMetrics?.remoteGpuUsed ?? null,
                 fallbackUsed: clipFallbackUsedForMetrics || (renderSummaryForMetrics?.fallbackUsed ?? null),
             });
+            throw error;
+        }
+    }
+
+    /**
+     * Regera a legenda de UM corte com ASR local (whisper), substituindo a
+     * herdada da transcrição do projeto — que normalmente vem da legenda
+     * automática do YouTube (erra palavras, sem pontuação).
+     *
+     * Transcreve só o intervalo do corte (segundos de GPU, não minutos) e NÃO
+     * renderiza: o usuário revisa o texto antes de gastar um render.
+     */
+    private async retranscribeClip(
+        payload: Extract<QueueJobPayload, { jobType: "RETRANSCRIBE_CLIP" }>,
+        jobId: string,
+    ) {
+        const log = (msg: string, extra?: Record<string, unknown>) =>
+            this.logger.log({ msg, jobId, projectId: payload.projectId, clipId: payload.clipId, ...extra });
+
+        try {
+            const clip = await this.prisma.clip.findFirstOrThrow({
+                where: { id: payload.clipId },
+                include: { project: { select: { id: true, userId: true, originalFilePath: true, sourceUrl: true, language: true } } },
+            });
+
+            const inputPath = await this.render.ensureOriginalFile(clip.project, log);
+            const duration = Math.max(1, clip.end - clip.start);
+            const audioPath = resolve(dirname(inputPath), "clips", clip.id, "retranscribe.mp3");
+
+            log(`Regerando legenda por IA (${duration.toFixed(1)}s de áudio)`);
+            await this.ffmpeg.extractAudioRange(inputPath, audioPath, clip.start, duration);
+
+            // Erros de rede/indisponibilidade viram mensagem acionável: o
+            // usuário final não sabe o que é "fetch failed".
+            const transcript = await this.transcription
+                .transcribeRemoteAudio(audioPath, clip.project.language)
+                .catch((error: unknown) => {
+                    const detail = error instanceof Error ? error.message : String(error);
+                    throw new Error(
+                        `O serviço de transcrição não respondeu (${detail}). Tente novamente em instantes.`,
+                    );
+                });
+            await unlink(audioPath).catch(() => undefined);
+
+            if (!transcript?.segments.length) {
+                throw new Error(
+                    "O transcritor não retornou texto para este trecho. Verifique se há fala audível no corte.",
+                );
+            }
+
+            // O áudio extraído começa em 0; os segmentos do clip são gravados
+            // em tempo ABSOLUTO do vídeo (é o que getSegments/render esperam).
+            const segments = transcript.segments
+                .map((segment) => ({
+                    start: Number((segment.start + clip.start).toFixed(3)),
+                    end: Number((segment.end + clip.start).toFixed(3)),
+                    text: segment.text,
+                }))
+                .filter((segment) => segment.text && segment.end > segment.start);
+
+            if (!segments.length) {
+                throw new Error("Transcrição retornou apenas segmentos vazios para este trecho.");
+            }
+
+            await this.prisma.clip.update({
+                where: { id: clip.id },
+                data: {
+                    subtitleSegmentsJson: segments as never,
+                    subtitleSource: "whisper_local",
+                    subtitleStatus: "COMPLETED",
+                    subtitleError: null,
+                },
+            });
+            log(`Legenda regerada: ${segments.length} segmento(s)`);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            this.logger.warn({ msg: `Falha ao regerar legenda: ${message}`, jobId, clipId: payload.clipId });
+            await this.prisma.clip
+                .update({
+                    where: { id: payload.clipId },
+                    data: { subtitleStatus: "FAILED", subtitleError: message.slice(0, 500) },
+                })
+                .catch(() => undefined);
             throw error;
         }
     }

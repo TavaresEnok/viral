@@ -133,18 +133,60 @@ export class ClipsService {
     });
     if (!clip) throw new NotFoundException('Clip não encontrado');
 
+    // Origem/estado ajudam a UI a explicar por que a legenda está ruim e a
+    // oferecer a regeração por IA.
+    const meta = {
+      source: clip.subtitleSource ?? clip.project.transcript?.source ?? null,
+      status: clip.subtitleStatus ?? null,
+      error: clip.subtitleError ?? null,
+    };
+
     // If user already saved custom segments, return those
     if (clip.subtitleSegmentsJson) {
-      return { segments: clip.subtitleSegmentsJson as Array<{ start: number; end: number; text: string }>, custom: true };
+      return { segments: clip.subtitleSegmentsJson as Array<{ start: number; end: number; text: string }>, custom: true, ...meta };
     }
 
     // Otherwise filter from global transcript
     if (!clip.project.transcript?.segmentsJson) {
-      return { segments: [], custom: false };
+      return { segments: [], custom: false, ...meta };
     }
     const allSegments = clip.project.transcript.segmentsJson as Array<{ start: number; end: number; text: string }>;
     const filtered = allSegments.filter((s) => s.end > clip.start && s.start < clip.end);
-    return { segments: filtered, custom: false };
+    return { segments: filtered, custom: false, ...meta };
+  }
+
+  /**
+   * Regera a legenda deste corte com ASR (whisper local), substituindo a que
+   * veio da transcrição do projeto (normalmente legenda automática do YouTube,
+   * que erra palavras e não tem pontuação). Não renderiza — o usuário revisa o
+   * texto antes de gastar um render.
+   */
+  async retranscribe(userId: string, clipId: string) {
+    const clip = await this.prisma.clip.findFirst({
+      where: { id: clipId, project: { userId } },
+      include: { project: { select: { id: true, originalFilePath: true, sourceUrl: true } } },
+    });
+    if (!clip) throw new NotFoundException('Clip não encontrado');
+    if (clip.subtitleStatus === 'PROCESSING') {
+      throw new BadRequestException('Já existe uma regeração de legenda em andamento para este corte');
+    }
+    if (!clip.project.originalFilePath && !clip.project.sourceUrl) {
+      throw new BadRequestException('O vídeo original não está mais disponível para transcrever este corte');
+    }
+
+    await this.prisma.clip.update({
+      where: { id: clipId },
+      data: { subtitleStatus: 'PROCESSING', subtitleError: null },
+    });
+
+    await this.queueService.addRetranscribeJob({
+      jobType: 'RETRANSCRIBE_CLIP',
+      projectId: clip.project.id,
+      userId,
+      clipId,
+    });
+
+    return { ok: true, status: 'PROCESSING' as const };
   }
 
   async updateSegments(userId: string, clipId: string, dto: UpdateSubtitleSegmentsDto) {
@@ -164,7 +206,9 @@ export class ClipsService {
 
     await this.prisma.clip.update({
       where: { id: clipId },
-      data: { subtitleSegmentsJson: dto.segments as never },
+      // Edição manual passa a ser a origem: não faz sentido continuar
+      // atribuindo a legenda ao whisper/YouTube depois que o usuário mexeu.
+      data: { subtitleSegmentsJson: dto.segments as never, subtitleSource: 'manual' },
     });
     return { ok: true, count: dto.segments.length };
   }
@@ -176,7 +220,13 @@ export class ClipsService {
     if (!clip) throw new NotFoundException('Clip não encontrado');
     await this.prisma.clip.update({
       where: { id: clipId },
-      data: { subtitleSegmentsJson: { set: null } as never },
+      // Volta a herdar a legenda da transcrição do projeto.
+      data: {
+        subtitleSegmentsJson: { set: null } as never,
+        subtitleSource: { set: null } as never,
+        subtitleStatus: { set: null } as never,
+        subtitleError: { set: null } as never,
+      },
     });
     return { ok: true };
   }

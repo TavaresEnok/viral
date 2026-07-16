@@ -119,6 +119,35 @@ export class FfmpegService {
         ]);
     }
 
+    /**
+     * Extrai só o áudio de um intervalo. Usado para regerar a legenda de UM
+     * corte: transcrever 40s custa segundos, o vídeo inteiro custa minutos.
+     * -ss/-t antes do -i = seek rápido, e o ffmpeg zera os timestamps (a saída
+     * começa em 0, relativa ao início do trecho).
+     */
+    async extractAudioRange(inputPath: string, outputPath: string, startSec: number, durationSec: number) {
+        await this.ensureDir(outputPath);
+        await this.execFfmpeg([
+            "-y",
+            "-threads",
+            String(this.threads),
+            "-ss",
+            String(Math.max(0, startSec)),
+            "-t",
+            String(Math.max(1, durationSec)),
+            "-i",
+            inputPath,
+            "-vn",
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            "-b:a",
+            "128k",
+            outputPath,
+        ]);
+    }
+
     async splitAudio(inputPath: string, outputPattern: string) {
         await this.ensureDir(outputPattern);
         await this.execFfmpeg([

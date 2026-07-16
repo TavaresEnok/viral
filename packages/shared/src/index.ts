@@ -51,6 +51,17 @@ export type QueueJobPayload =
       autoOverlays?: boolean;
     }
   | {
+      /**
+       * Regera a legenda de UM corte com ASR (whisper local), substituindo a
+       * legenda herdada da transcrição do projeto (que pode vir do YouTube).
+       * Não renderiza: o usuário revisa o texto antes de gastar um render.
+       */
+      jobType: 'RETRANSCRIBE_CLIP';
+      projectId: string;
+      userId: string;
+      clipId: string;
+    }
+  | {
       jobType: 'PUBLISH_CLIP';
       projectId: string;
       userId: string;
@@ -115,6 +126,13 @@ export function validateJobPayload(
   if (jobType === 'RENDER_CLIP') {
     if (typeof obj.clipId !== 'string' || !obj.clipId) {
       return { valid: false, error: 'clipId é obrigatório para RENDER_CLIP' };
+    }
+    return { valid: true, data: payload as QueueJobPayload };
+  }
+
+  if (jobType === 'RETRANSCRIBE_CLIP') {
+    if (typeof obj.clipId !== 'string' || !obj.clipId) {
+      return { valid: false, error: 'clipId é obrigatório para RETRANSCRIBE_CLIP' };
     }
     return { valid: true, data: payload as QueueJobPayload };
   }

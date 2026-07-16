@@ -14,6 +14,7 @@ import {
     Play,
     RefreshCw,
     ScanFace,
+    Sparkles,
     Timer,
     Trash2,
 } from "lucide-react";
@@ -159,7 +160,12 @@ export default function ClipEditorPage({
         queryFn: () => api.clips.getSegments(clipId!),
         enabled: !!clipId && tab === "transcript",
         staleTime: 30_000,
+        // Enquanto a IA regera a legenda, acompanha até concluir/falhar.
+        refetchInterval: (query) =>
+            query.state.data?.status === "PROCESSING" ? 3000 : false,
     });
+    const subtitleStatus = segmentsQuery.data?.status ?? null;
+    const retranscribing = subtitleStatus === "PROCESSING";
 
     useEffect(() => {
         if (!clipId || !selectedClip) return;
@@ -1213,11 +1219,55 @@ export default function ClipEditorPage({
 
                     {tab === "transcript" && (
                         <div className="mt-6">
+                            {segmentsQuery.data?.source === "youtube_captions" && !retranscribing && (
+                                <div className="mb-4 rounded-card border border-hairline-subtle bg-surface-subtle p-3">
+                                    <p className="text-sm text-ink-secondary">
+                                        Esta legenda veio da <strong>legenda automática do YouTube</strong>, que erra
+                                        palavras e não tem pontuação. Use <strong>Regerar com IA</strong> para
+                                        transcrever o áudio deste corte com o Whisper.
+                                    </p>
+                                </div>
+                            )}
+                            {subtitleStatus === "FAILED" && segmentsQuery.data?.error && (
+                                <div className="mb-4 rounded-card border border-hairline-subtle bg-surface-subtle p-3">
+                                    <p className="text-sm text-ink-secondary">
+                                        Não foi possível regerar a legenda: {segmentsQuery.data.error}
+                                    </p>
+                                </div>
+                            )}
                             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                                 <p className="font-mono text-micro font-bold uppercase tracking-[0.14em] text-ink-tertiary">
                                     segmentos da legenda
+                                    {segmentsQuery.data?.source === "whisper_local" && (
+                                        <span className="ml-2 normal-case tracking-normal text-ink-tertiary">
+                                            · gerada por IA
+                                        </span>
+                                    )}
                                 </p>
                                 <div className="flex items-center gap-2">
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        loading={retranscribing}
+                                        disabled={retranscribing}
+                                        title="Transcreve o áudio deste corte com IA (Whisper). Não renderiza — você revisa o texto antes."
+                                        onClick={async () => {
+                                            try {
+                                                await api.clips.retranscribe(selectedClip.id);
+                                                setEditedSegments(null);
+                                                await queryClient.invalidateQueries({ queryKey: ["clip-segments", clipId] });
+                                                toast.success("Regerando legenda com IA — isso leva alguns segundos.");
+                                            } catch (error) {
+                                                toast.error(
+                                                    error instanceof Error ? error.message : "Falha ao regerar legenda",
+                                                );
+                                            }
+                                        }}
+                                    >
+                                        <Sparkles className="h-3.5 w-3.5" />
+                                        {retranscribing ? "Transcrevendo…" : "Regerar com IA"}
+                                    </Button>
                                     {segmentsQuery.data?.custom && (
                                         <Button
                                             type="button"

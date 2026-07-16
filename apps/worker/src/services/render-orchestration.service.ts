@@ -115,7 +115,7 @@ export class RenderOrchestrationService {
      * apaga originais antigos de projetos com sourceUrl; aqui o arquivo é
      * re-baixado sob demanda quando o usuário pede um novo render.
      */
-    private async ensureOriginalFile(
+    async ensureOriginalFile(
         project: { id: string; userId: string; originalFilePath: string | null; sourceUrl: string | null },
         log: (msg: string, extra?: Record<string, unknown>) => void,
     ): Promise<string> {

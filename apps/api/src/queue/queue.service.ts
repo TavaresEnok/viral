@@ -30,6 +30,14 @@ export class QueueService implements OnModuleDestroy {
     });
   }
 
+  async addRetranscribeJob(payload: Extract<QueueJobPayload, { jobType: 'RETRANSCRIBE_CLIP' }>) {
+    return this.addUnique('retranscribe-clip', payload, {
+      jobId: `clip:${payload.clipId}:retranscribe`,
+      attempts: 2,
+      backoff: { type: 'exponential', delay: 3000 },
+    });
+  }
+
   async addPublishJob(payload: Extract<QueueJobPayload, { jobType: 'PUBLISH_CLIP' }>) {
     return this.addUnique('publish-clip', payload, {
       jobId: `clip:${payload.clipId}:publish:${payload.socialAccountId}`,
@@ -38,7 +46,7 @@ export class QueueService implements OnModuleDestroy {
     });
   }
 
-  private async addUnique(name: 'process-video' | 'render-clip' | 'publish-clip', payload: QueueJobPayload, options: { jobId: string; attempts: number; backoff: { type: 'exponential'; delay: number } }) {
+  private async addUnique(name: 'process-video' | 'render-clip' | 'publish-clip' | 'retranscribe-clip', payload: QueueJobPayload, options: { jobId: string; attempts: number; backoff: { type: 'exponential'; delay: number } }) {
     const existing = await this.queue.getJob(options.jobId);
     if (existing) {
       const state = await existing.getState();

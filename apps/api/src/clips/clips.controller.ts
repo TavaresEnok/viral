@@ -90,6 +90,13 @@ export class ClipsController {
     return this.clipsService.getSegments(user.id, clipId);
   }
 
+  /** Regera a legenda deste corte com IA (whisper local). Não renderiza. */
+  @Post('clips/:clipId/retranscribe')
+  @UseGuards(JwtAuthGuard)
+  retranscribe(@CurrentUser() user: RequestUser, @Param('clipId') clipId: string) {
+    return this.clipsService.retranscribe(user.id, clipId);
+  }
+
   @Patch('clips/:clipId/segments')
   @UseGuards(JwtAuthGuard)
   updateSegments(
