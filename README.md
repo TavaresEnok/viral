@@ -25,12 +25,15 @@ corepack pnpm db:migrate
 corepack pnpm db:seed
 ```
 
-Usuário seed:
+Usuário seed (apenas ambiente local — **nunca rode o seed em produção**):
 
-```text
-demo@viralforge.local
-viralforge123
+```bash
+# Define a senha do usuário demo. Sem esta variável o seed gera uma senha
+# aleatória e a imprime uma única vez no console.
+SEED_DEMO_PASSWORD='escolha-uma-senha-forte' corepack pnpm db:seed
 ```
+
+O login é `demo@viralforge.local`. A senha **não** é versionada: senha fixa em repositório público equivale a conta aberta.
 
 ## Rodar
 

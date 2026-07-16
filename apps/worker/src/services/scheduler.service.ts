@@ -175,6 +175,24 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  /**
+   * AuditLog cresce sem limite (uma linha por login/ação). Mantém a janela
+   * exigida por auditoria e descarta o resto. AUDIT_RETENTION_DAYS=0 desativa.
+   */
+  @Cron(CronExpression.EVERY_DAY_AT_4AM)
+  async cleanupOldAuditLogs() {
+    const days = Number(process.env.AUDIT_RETENTION_DAYS ?? 180);
+    if (!Number.isFinite(days) || days <= 0) return;
+
+    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const deleted = await this.prisma.auditLog.deleteMany({
+      where: { createdAt: { lt: cutoff } },
+    });
+    if (deleted.count > 0) {
+      this.logger.log({ msg: 'Janitor de AuditLog executado', removed: deleted.count, retentionDays: days });
+    }
+  }
+
   @Cron(CronExpression.EVERY_MINUTE)
   async recoverOrFailOrphanProjects() {
     const candidates = await this.prisma.project.findMany({

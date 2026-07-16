@@ -315,7 +315,9 @@ export class SubtitleService {
     return text
       .replace(/[{}]/g, '')
       .replace(/\n/g, '\\N')
-      .replace(/,/g, '\\,')
+      // Sem escape de vírgula: Text é o ÚLTIMO campo do Dialogue:, então a
+      // vírgula é literal. Escapar imprimia uma barra invertida na legenda
+      // ("ola\, mundo"), porque o libass não trata \, como override.
       .trim();
   }
 

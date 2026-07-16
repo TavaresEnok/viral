@@ -279,6 +279,10 @@ model Project {
 
   @@index([userId])
   @@index([status])
+  // Query real da listagem: where userId + orderBy createdAt desc.
+  @@index([userId, createdAt])
+  // Watchdogs (a cada minuto): where status in (...) + updatedAt < cutoff.
+  @@index([status, updatedAt])
 }
 
 model Transcript {
@@ -367,6 +371,8 @@ model Clip {
 
   @@index([projectId])
   @@index([status])
+  // Query real: where projectId + orderBy finalScore desc, viralScore desc.
+  @@index([projectId, finalScore])
 }
 
 model ClipFeedback {

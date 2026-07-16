@@ -96,8 +96,12 @@ export default function ClipEditorPage({
         () => clipsQuery.data ?? projectQuery.data?.clips ?? [],
         [clipsQuery.data, projectQuery.data?.clips],
     );
+    // Sem fallback para clips[0]: se o clipId da URL não existe (ex.: apagado
+    // em outra aba), cair no primeiro corte fazia a tela operar num clip
+    // diferente do da URL — "Apagar"/"Regenerar" agiam no corte errado.
+    // `undefined` renderiza o estado "Não encontrei esse corte".
     const selectedClip = useMemo(
-        () => clips.find((clip) => clip.id === params.clipId) ?? clips[0],
+        () => clips.find((clip) => clip.id === params.clipId),
         [clips, params.clipId],
     );
     const projectDefaultRenderLayout =

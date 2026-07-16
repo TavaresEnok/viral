@@ -1,5 +1,5 @@
 import { ApiTags } from '@nestjs/swagger';
-import { Body, Controller, Delete, Get, Param, Patch, Post, UploadedFile, UseGuards, UseInterceptors, BadRequestException, Res, Header } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Logger, Param, Patch, Post, UploadedFile, UseGuards, UseInterceptors, BadRequestException, Res, Header } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname, resolve } from 'node:path';
@@ -10,7 +10,7 @@ import { JwtAuthGuard } from '../common/jwt-auth.guard.js';
 import { storageRoot, assertPathInsideStorage } from '../common/safe-path.helper.js';
 import type { RequestUser } from '../common/request-user.js';
 import { BrandKitService } from './brand-kit.service.js';
-import type { CreateBrandKitDto, UpdateBrandKitDto } from './dto.js';
+import { CreateBrandKitDto, UpdateBrandKitDto } from './dto.js';
 import type { Response } from 'express';
 
 const IMAGE_MAGIC_BYTES: Record<string, Uint8Array> = {
@@ -34,6 +34,8 @@ function validateImageMagicBytes(buffer: Buffer, mimetype: string): boolean {
 @Controller('brand-kits')
 @UseGuards(JwtAuthGuard)
 export class BrandKitController {
+  private readonly logger = new Logger(BrandKitController.name);
+
   constructor(private readonly brandKitService: BrandKitService) {}
 
   @Get()
@@ -68,6 +70,17 @@ export class BrandKitController {
     const mime = this.brandKitService.getMimeType(filePath);
     res.setHeader('Content-Type', mime);
     const stream = createReadStream(filePath);
+    // Sem este handler, um logo ausente no disco (registro órfão no banco)
+    // emite 'error' sem listener → uncaughtException → o processo da API morre.
+    stream.on('error', (err) => {
+      this.logger.error(`Falha ao ler logo do brand kit ${id}: ${err.message}`);
+      if (!res.headersSent) {
+        res.status(404).json({ message: 'Logo não encontrado' });
+      } else {
+        res.destroy();
+      }
+    });
+    res.on('close', () => stream.destroy());
     stream.pipe(res);
   }
 

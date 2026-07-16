@@ -28,6 +28,20 @@ type RenderOptions = {
     autoOverlays?: boolean;
 };
 
+export type RenderClipResult = {
+    videoPath: string;
+    thumbnailPath: string;
+    srtPath: string;
+    vttPath: string;
+    renderEngine: string;
+    renderDurationMs: number;
+    /**
+     * Face track usado no render LOCAL. É null quando o node remoto atendeu:
+     * ele faz o próprio tracking, então não existe crop local a reportar.
+     */
+    smartCrop: SmoothedCrop | null;
+};
+
 @Injectable()
 export class RenderingService {
     private readonly logger = new Logger(RenderingService.name);
@@ -66,7 +80,7 @@ export class RenderingService {
         clip: Clip,
         segments: TranscriptSegment[],
         options: RenderOptions,
-    ) {
+    ): Promise<RenderClipResult> {
         const projectDir = dirname(inputPath);
         const baseDir = resolve(projectDir, "clips", clip.id);
         const srtPath = resolve(baseDir, "subtitle.srt");
@@ -97,11 +111,23 @@ export class RenderingService {
         const shouldUseRemotion = process.env.RENDER_ENGINE === "remotion";
         let ownedRemoteMediaId: string | null = null;
 
-        // Run face tracking for smart layouts; dual-face for PODCAST_SPLIT_STATIC
+        // Face tracking para layouts smart; dual-face para PODCAST_SPLIT_STATIC.
+        //
+        // PREGUIÇOSO DE PROPÓSITO: o node remoto faz o PRÓPRIO face tracking e
+        // não recebe estes valores, então rodar a detecção aqui antes do branch
+        // remoto era decode + inferência jogados fora em todo corte smart (o
+        // caminho de produção, REMOTE_RENDER_ENABLED=true). Agora só roda quando
+        // o render local realmente vai usar o resultado.
         let resolvedSmartCrop: SmoothedCrop | null = null;
         let resolvedDualCrop: [SmoothedCrop, SmoothedCrop] | undefined;
+        let faceTrackingResolved = false;
 
-        if (SMART_LAYOUTS.includes(options.renderLayout) || DUAL_FACE_LAYOUTS.includes(options.renderLayout)) {
+        const resolveFaceTracking = async () => {
+            if (faceTrackingResolved) return;
+            faceTrackingResolved = true;
+            if (!SMART_LAYOUTS.includes(options.renderLayout) && !DUAL_FACE_LAYOUTS.includes(options.renderLayout)) {
+                return;
+            }
             const clipDir = this.smartCrop.clipDir(inputPath, clip.id);
             const cachedFaces = await this.smartCrop.loadCache(clipDir);
             let faces: import('./smart-crop.service.js').FaceTrackPoint[];
@@ -130,7 +156,7 @@ export class RenderingService {
                     this.logger.warn({ msg: `No faces detected for smart layout, using fallback crop`, clipId: clip.id, layout: options.renderLayout });
                 }
             }
-        }
+        };
 
         if (
             !shouldUseRemotion &&
@@ -179,6 +205,10 @@ export class RenderingService {
                 }
             }
         }
+
+        // Daqui pra baixo o render é local (Remotion ou ffmpeg) e consome o
+        // face tracking de verdade — agora sim vale pagar a detecção.
+        await resolveFaceTracking();
 
         const clipForRender = { ...clip, end: renderEnd };
 

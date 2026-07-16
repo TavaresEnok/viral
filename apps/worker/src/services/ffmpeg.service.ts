@@ -9,6 +9,11 @@ import type { FaceTrackPoint, SmoothedCrop } from "./smart-crop.service.js";
 
 const execFileAsync = promisify(execFile);
 
+// O default do execFile é 1MB: ffmpeg emitindo warning por frame (ex.: "Past
+// duration too large") estoura isso num render longo, e o Node MATA o processo
+// no meio, com um erro que não parece de ffmpeg.
+const EXEC_MAX_BUFFER = 64 * 1024 * 1024;
+
 const FFMPEG_TIMEOUT_MS = parseInt(
     process.env.FFMPEG_TIMEOUT_MS ?? "600000",
     10,
@@ -41,6 +46,7 @@ export class FfmpegService {
         try {
             return await execFileAsync("ffprobe", args, {
                 signal: controller.signal,
+                maxBuffer: EXEC_MAX_BUFFER,
             });
         } finally {
             clearTimeout(timeout);
@@ -55,6 +61,7 @@ export class FfmpegService {
         try {
             return await execFileAsync("ffmpeg", args, {
                 signal: controller.signal,
+                maxBuffer: EXEC_MAX_BUFFER,
             });
         } finally {
             clearTimeout(timeout);

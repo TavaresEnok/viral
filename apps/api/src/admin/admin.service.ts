@@ -553,13 +553,30 @@ export class AdminService implements OnModuleDestroy {
     };
     if (project.originalFilePath) payload.originalFilePath = project.originalFilePath;
     if (project.sourceUrl) payload.sourceUrl = project.sourceUrl;
-    await this.queue.add('process-video', payload, {
-      attempts: 2,
-      backoff: { type: 'exponential', delay: 5000 },
-      jobId: `admin-requeue:${projectId}:${Date.now()}`,
-      removeOnComplete: { count: 100 },
-      removeOnFail: { count: 200 },
-    });
+    // Enfileirar pode falhar (Redis fora) DEPOIS do update acima já ter
+    // commitado — o projeto ficaria preso em PROCESSING até o watchdog de
+    // 180min. Reverte o status para que o erro seja visível e reprocessável.
+    try {
+      await this.queue.add('process-video', payload, {
+        attempts: 2,
+        backoff: { type: 'exponential', delay: 5000 },
+        jobId: `admin-requeue:${projectId}:${Date.now()}`,
+        removeOnComplete: { count: 100 },
+        removeOnFail: { count: 200 },
+      });
+    } catch (error) {
+      await this.prisma.project
+        .update({
+          where: { id: projectId },
+          data: {
+            status: 'FAILED',
+            progress: 100,
+            errorMessage: 'Falha ao enfileirar o reprocessamento. Tente novamente.',
+          },
+        })
+        .catch(() => undefined);
+      throw error;
+    }
     await this.audit.record({
       userId: actorId,
       action: 'admin.project.requeue',

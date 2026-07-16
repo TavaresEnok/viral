@@ -16,8 +16,8 @@ import { Input } from '@/components/ui/Input';
 export function LoginForm() {
   const router = useRouter();
   const login = useAuthStore((state) => state.login);
-  const [email, setEmail] = useState('demo@viralforge.local');
-  const [password, setPassword] = useState('viralforge123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

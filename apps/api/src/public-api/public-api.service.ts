@@ -8,9 +8,15 @@ export class PublicApiService {
 
   async validateApiKey(apiKey: string): Promise<string> {
     const hash = createHash('sha256').update(apiKey).digest('hex');
-    const key = await this.prisma.apiKey.findUnique({ where: { keyHash: hash } });
+    const key = await this.prisma.apiKey.findUnique({
+      where: { keyHash: hash },
+      include: { user: { select: { suspended: true } } },
+    });
     if (!key || !key.active) throw new UnauthorizedException('API key inválida ou inativa');
     if (key.expiresAt && key.expiresAt < new Date()) throw new UnauthorizedException('API key expirada');
+    // Suspender um usuário revoga as sessões web, mas a API key continuava
+    // válida — o suspenso seguia consumindo IA/GPU pela API pública.
+    if (key.user.suspended) throw new UnauthorizedException('Conta suspensa');
 
     await this.prisma.apiKey.update({ where: { id: key.id }, data: { lastUsedAt: new Date() } });
     return key.userId;

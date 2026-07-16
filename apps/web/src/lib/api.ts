@@ -25,8 +25,10 @@ function resolveBaseUrl(): string {
     if (process.env.NEXT_PUBLIC_API_URL) {
         return process.env.NEXT_PUBLIC_API_URL;
     }
+    // Mesma origem: o Next faz rewrite de /api → API. Apontar para :3001
+    // direto quebraria o CSP (connect-src 'self') e exigiria a porta exposta.
     if (typeof window !== "undefined") {
-        return `${window.location.protocol}//${window.location.hostname}:3001`;
+        return "/api";
     }
     return "http://localhost:3001";
 }

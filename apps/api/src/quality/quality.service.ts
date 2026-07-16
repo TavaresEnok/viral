@@ -28,10 +28,37 @@ export class QualityService {
       where: { userId },
       orderBy: { createdAt: 'desc' },
       take: 50,
-      include: {
-        transcript: true,
-        clips: { include: { feedbacks: true }, orderBy: [{ finalScore: 'desc' }, { viralScore: 'desc' }] },
-        jobs: { orderBy: { createdAt: 'asc' } },
+      // select explícito: `transcript: true` trazia segmentsJson/wordsJson/
+      // fullText (dezenas de MB por projeto × 50) para usar 4 campos — caminho
+      // direto para OOM. Idem clips, que traziam faceTrackJson/scoreBreakdown.
+      select: {
+        id: true,
+        title: true,
+        status: true,
+        progress: true,
+        createdAt: true,
+        durationSeconds: true,
+        errorMessage: true,
+        llmCostEstimate: true,
+        llmPass1Tokens: true,
+        llmPass2Tokens: true,
+        transcript: {
+          select: { source: true, sourceModel: true, qualityScore: true, qualityWarnings: true },
+        },
+        clips: {
+          orderBy: [{ finalScore: 'desc' as const }, { viralScore: 'desc' as const }],
+          select: {
+            status: true,
+            finalScore: true,
+            viralScore: true,
+            openingStrength: true,
+            closingStrength: true,
+            renderDurationMs: true,
+            renderEngine: true,
+            feedbacks: { select: { reason: true } },
+          },
+        },
+        jobs: { orderBy: { createdAt: 'asc' as const }, select: { stage: true } },
       },
     });
 

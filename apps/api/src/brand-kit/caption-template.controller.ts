@@ -3,7 +3,7 @@ import { PrismaService } from '../prisma.service.js';
 import { CurrentUser } from '../common/current-user.decorator.js';
 import { JwtAuthGuard } from '../common/jwt-auth.guard.js';
 import type { RequestUser } from '../common/request-user.js';
-import type { CreateCaptionTemplateDto } from './dto.js';
+import { CreateCaptionTemplateDto } from './dto.js';
 
 @Controller('caption-templates')
 @UseGuards(JwtAuthGuard)
