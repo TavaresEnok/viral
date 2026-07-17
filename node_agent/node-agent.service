@@ -1,0 +1,14 @@
+[Unit]
+Description=Node Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ajustconsulting/projeto_enok_microservicos/node_agent
+ExecStart=/home/ajustconsulting/projeto_enok_microservicos/node_agent/run.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
