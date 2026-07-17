@@ -5,14 +5,13 @@ import type { CapacitorConfig } from '@capacitor/cli';
  * carrega o site de produção dentro do WebView nativo — reaproveita 100% da UI
  * React/Next, sem reescrever telas.
  *
- * IMPORTANTE:
- * - A URL PRECISA ser HTTPS. O Android bloqueia tráfego cleartext (HTTP) por
- *   padrão, e a Play Store exige HTTPS. Hoje o site roda em http://IP:3002 — é
- *   preciso colocar um domínio com TLS (ex.: https://app.seudominio.com) antes
- *   de publicar.
- * - Defina a URL via env VIRALFORGE_APP_URL ao rodar `cap sync`, ou edite aqui.
+ * Instalação DIRETA (APK, sem Play Store): aponta para o IP público em HTTP e
+ * permite cleartext. A Play Store exigiria HTTPS; para sideload (baixar e
+ * instalar o APK) não é obrigatório. Quando houver um domínio com TLS, troque
+ * VIRALFORGE_APP_URL para https://... e volte cleartext para false.
  */
-const APP_URL = process.env.VIRALFORGE_APP_URL ?? 'https://app.viralforge.com.br';
+const APP_URL = process.env.VIRALFORGE_APP_URL ?? 'http://168.194.13.20';
+const IS_HTTPS = APP_URL.startsWith('https://');
 
 const config: CapacitorConfig = {
   appId: 'com.viralforge.app',
@@ -25,7 +24,9 @@ const config: CapacitorConfig = {
   backgroundColor: '#0C0C11',
   server: {
     url: APP_URL,
-    cleartext: false,
+    // HTTP direto no IP exige cleartext (só quando a URL não é HTTPS).
+    cleartext: !IS_HTTPS,
+    androidScheme: IS_HTTPS ? 'https' : 'http',
     // Quando o site (server.url) está inacessível, mostra a shell branded de
     // www/index.html em vez da página de erro crua do Chrome (net::ERR_...).
     errorPath: 'index.html',
@@ -57,9 +58,8 @@ const config: CapacitorConfig = {
       backgroundColor: '#0C0C11',
       overlaysWebView: false,
     },
-    PushNotifications: {
-      presentationOptions: ['badge', 'sound', 'alert'],
-    },
+    // Push notifications removido de propósito: exigiria Firebase
+    // (google-services.json). Reativar quando/se for para a Play Store.
   },
 };
 

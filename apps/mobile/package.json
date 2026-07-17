@@ -9,7 +9,7 @@
     "sync": "cap sync",
     "open:android": "cap open android",
     "run:android": "cap run android",
-    "build:apk": "cd android && ./gradlew assembleRelease",
+    "build:apk": "cd android && ./gradlew assembleDebug",
     "build:aab": "cd android && ./gradlew bundleRelease",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
@@ -19,7 +19,6 @@
     "@capacitor/browser": "^6.0.5",
     "@capacitor/core": "^6.1.2",
     "@capacitor/preferences": "^6.0.3",
-    "@capacitor/push-notifications": "^6.0.4",
     "@capacitor/share": "^6.0.3",
     "@capacitor/splash-screen": "^6.0.3",
     "@capacitor/status-bar": "^6.0.2"

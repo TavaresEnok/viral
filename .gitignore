@@ -70,3 +70,9 @@ packages/face-engine/build/Makefile
 
 # Claude Code — settings locais por máquina (não versionar)
 .claude/settings.local.json
+
+# App mobile: projeto Android gerado (regenerável com `cap add android`) e APK
+apps/mobile/android/
+apps/mobile/local.properties
+apps/web/public/viralforge.apk
+*.apk
