@@ -2,31 +2,184 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#0C0C11" />
     <title>ViralForge</title>
     <style>
+      /* Paleta espelha o web app (globals.css): dark-first, lime #C8F542. */
+      :root {
+        --bg: #0c0c11;
+        --surface: #14141b;
+        --elevated: #1c1c26;
+        --ink: #fafafa;
+        --ink-dim: #a1a1aa;
+        --ink-faint: #6b6b76;
+        --lime: #c8f542;
+        --magenta: #ff4fa3;
+        --hairline: rgba(255, 255, 255, 0.08);
+      }
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
       html, body {
         margin: 0;
         height: 100%;
-        background: #0c0c11;
-        color: #fafafa;
-        font-family: -apple-system, system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        overscroll-behavior: none;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      body {
         display: grid;
         place-items: center;
+        /* Respeita notch / barra de status / gesture bar. */
+        padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
+        /* Brilho de marca sutil, só em gradiente (guia de marca). */
+        background:
+          radial-gradient(120% 80% at 50% -10%, rgba(200, 245, 66, 0.10), transparent 60%),
+          radial-gradient(90% 60% at 50% 120%, rgba(255, 79, 163, 0.08), transparent 55%),
+          var(--bg);
       }
-      .box { text-align: center; padding: 24px; }
-      .logo { font-weight: 800; font-size: 28px; letter-spacing: -0.04em; }
-      .msg { margin-top: 12px; font-size: 14px; color: #a1a1aa; }
-      .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
-        background: #c8f542; animation: blink 1.4s ease-in-out infinite; }
-      @keyframes blink { 0%, 100% { opacity: .25 } 50% { opacity: 1 } }
+      .stage { width: 100%; max-width: 340px; text-align: center; }
+
+      /* Marca */
+      .brand {
+        display: inline-flex; align-items: center; gap: 10px;
+        font-weight: 800; font-size: 30px; letter-spacing: -0.045em;
+      }
+      .brand .spark {
+        width: 30px; height: 30px; display: block;
+        filter: drop-shadow(0 0 14px rgba(200, 245, 66, 0.45));
+      }
+      .brand .dot { color: var(--lime); }
+
+      /* Estado: conectando */
+      .connecting { margin-top: 26px; }
+      .track {
+        width: 132px; height: 3px; margin: 0 auto;
+        border-radius: 999px; background: var(--hairline); overflow: hidden;
+      }
+      .track > i {
+        display: block; height: 100%; width: 40%; border-radius: 999px;
+        background: linear-gradient(90deg, transparent, var(--lime), transparent);
+        animation: slide 1.15s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+      }
+      @keyframes slide {
+        0% { transform: translateX(-140%); }
+        100% { transform: translateX(340%); }
+      }
+      .status { margin-top: 16px; font-size: 13.5px; color: var(--ink-dim); letter-spacing: 0.01em; }
+
+      /* Estado: offline */
+      .offline { margin-top: 22px; display: none; }
+      .offline .icon {
+        width: 56px; height: 56px; margin: 0 auto 18px;
+        display: grid; place-items: center;
+        border-radius: 16px; background: var(--surface); border: 1px solid var(--hairline);
+      }
+      .offline h1 { margin: 0; font-size: 19px; font-weight: 700; letter-spacing: -0.02em; }
+      .offline p { margin: 8px auto 0; max-width: 260px; font-size: 13.5px; line-height: 1.5; color: var(--ink-dim); }
+      .retry {
+        margin-top: 22px; width: 100%; height: 50px;
+        border: 0; border-radius: 14px; cursor: pointer;
+        font-size: 15px; font-weight: 700; letter-spacing: -0.01em;
+        color: #0c0c11; background: var(--lime);
+        display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+        transition: transform 0.12s ease, filter 0.12s ease;
+      }
+      .retry:active { transform: scale(0.975); filter: brightness(0.95); }
+      .retry.spin { pointer-events: none; opacity: 0.85; }
+      .retry.spin .label { opacity: 0.7; }
+      .hint { margin-top: 14px; font-size: 12px; color: var(--ink-faint); }
+
+      .spinner { width: 17px; height: 17px; display: none; }
+      .retry.spin .spinner { display: block; animation: rot 0.7s linear infinite; }
+      @keyframes rot { to { transform: rotate(360deg); } }
+
+      /* Transição entre estados */
+      #app[data-state="offline"] .connecting { display: none; }
+      #app[data-state="offline"] .offline { display: block; animation: rise 0.32s ease both; }
+      @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+      .stage { animation: fade 0.5s ease both; }
+      @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+
+      @media (prefers-reduced-motion: reduce) {
+        .track > i, .spinner, .stage, .offline { animation: none !important; }
+      }
     </style>
   </head>
   <body>
-    <!-- Fallback exibido só se o servidor remoto (server.url) estiver inacessível. -->
-    <div class="box">
-      <div class="logo">viral<span style="color:#c8f542">.</span></div>
-      <div class="msg"><span class="dot"></span> Conectando ao ViralForge…</div>
+    <!--
+      Shell nativa do app (Capacitor remote-URL). Aparece durante a conexão e
+      como errorPath quando o site (server.url) está inacessível. Tenta se
+      reconectar sozinha e oferece "Tentar novamente" em vez de travar numa
+      tela morta.
+    -->
+    <div id="app" class="stage" data-state="connecting">
+      <div class="brand">
+        <svg class="spark" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M13 2 4.5 13.5h6L11 22l8.5-11.5h-6L13 2Z" fill="#c8f542" />
+        </svg>
+        <span>viral<span class="dot">.</span></span>
+      </div>
+
+      <div class="connecting">
+        <div class="track"><i></i></div>
+        <div class="status">Conectando ao ViralForge…</div>
+      </div>
+
+      <div class="offline">
+        <div class="icon">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" stroke-width="1.8" stroke-linecap="round">
+            <path d="M2 2l20 20" />
+            <path d="M8.5 16.5a5 5 0 0 1 7 0" />
+            <path d="M5 12.5a10 10 0 0 1 3.5-2.3" />
+            <path d="M19 12.5a10 10 0 0 0-4.5-2.7" />
+            <path d="M2 8.8A15 15 0 0 1 6 6.2M22 8.8a15 15 0 0 0-8-2.7" />
+            <path d="M12 20h.01" />
+          </svg>
+        </div>
+        <h1>Sem conexão</h1>
+        <p>Não foi possível alcançar o ViralForge. Verifique sua internet e tente de novo.</p>
+        <button class="retry" id="retry" type="button">
+          <svg class="spinner" viewBox="0 0 24 24" fill="none" stroke="#0c0c11" stroke-width="2.4" stroke-linecap="round">
+            <path d="M21 12a9 9 0 1 1-6.2-8.5" />
+          </svg>
+          <span class="label">Tentar novamente</span>
+        </button>
+        <div class="hint">ViralForge precisa de conexão para carregar seus cortes.</div>
+      </div>
     </div>
+
+    <script>
+      (function () {
+        var app = document.getElementById('app');
+        var retry = document.getElementById('retry');
+
+        // Se esta shell continuar visível, a conexão com o site falhou. Damos
+        // uma janela curta para uma falha transitória se resolver sozinha antes
+        // de mostrar o estado offline.
+        var GRACE_MS = 3500;
+        var graceTimer = setTimeout(function () {
+          app.setAttribute('data-state', 'offline');
+        }, GRACE_MS);
+
+        function attemptReconnect() {
+          retry.classList.add('spin');
+          // Recarrega: o Capacitor re-tenta o server.url. Se voltar, o site
+          // assume; se não, a shell reaparece e o usuário tenta de novo.
+          setTimeout(function () { location.reload(); }, 400);
+        }
+
+        retry.addEventListener('click', attemptReconnect);
+
+        // Reconecta automático assim que o SO reportar rede de volta.
+        window.addEventListener('online', function () {
+          clearTimeout(graceTimer);
+          attemptReconnect();
+        });
+      })();
+    </script>
   </body>
 </html>
