@@ -12,12 +12,13 @@ RUN pnpm --filter @viralforge/api build
 
 FROM node:20-alpine AS runner
 RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
-RUN apk add --no-cache ffmpeg wget
+RUN apk add --no-cache ffmpeg wget openssl
 WORKDIR /app
 COPY --from=builder /app/packages packages
 COPY --from=builder /app/apps/api/dist apps/api/dist
 COPY --from=builder /app/apps/api/package.json apps/api/
 COPY --from=builder /app/node_modules node_modules
+COPY --from=builder /app/apps/api/node_modules apps/api/node_modules
 COPY --from=builder /app/packages/database/prisma packages/database/prisma
 ENV NODE_ENV=production
 EXPOSE 3001

@@ -1,5 +1,8 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // "native" cobre o worker (Debian/glibc). O alvo musl-openssl-3.0.x cobre a
+  // imagem Alpine da API, onde o Alpine 3.x usa OpenSSL 3 (evita libssl.so.1.1).
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {

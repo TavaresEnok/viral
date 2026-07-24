@@ -79,6 +79,9 @@ services:
       WEB_ORIGIN: ${WEB_ORIGIN:?WEB_ORIGIN is required}
       STORAGE_ROOT: /data/uploads
       NODE_ENV: production
+      # Exigidos pelo validateEnv() da API em producao (apps/api/src/main.ts)
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
       YOUTUBE_CLIENT_ID: ${YOUTUBE_CLIENT_ID:-}
       YOUTUBE_CLIENT_SECRET: ${YOUTUBE_CLIENT_SECRET:-}
       YOUTUBE_REDIRECT_URI: ${YOUTUBE_REDIRECT_URI:-}
@@ -115,12 +118,16 @@ services:
       JWT_SECRET: ${JWT_SECRET:?}
       MASTER_SECRET: ${MASTER_SECRET:?}
       STORAGE_ROOT: /data/uploads
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?}
       MINIO_BUCKET: viralforge
       NODE_ENV: production
       WORKER_HEALTH_PORT: 3012
+      STORAGE_RETENTION_DAYS: ${STORAGE_RETENTION_DAYS:-7}
+      REMOTION_BROWSER_EXECUTABLE: ${REMOTION_BROWSER_EXECUTABLE:-/usr/bin/chromium}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
@@ -148,11 +155,15 @@ services:
     build:
       context: ..
       dockerfile: apps/web/Dockerfile
+      args:
+        # O Next assa os rewrites no build; o alvo do proxy /api precisa vir daqui
+        API_PROXY_TARGET: ${API_PROXY_TARGET:-http://api:3001}
     container_name: viralforge-web
     ports:
       - "127.0.0.1:3000:3000"
     environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL is required}
+      API_PROXY_TARGET: ${API_PROXY_TARGET:-http://api:3001}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
       NODE_ENV: production
     restart: unless-stopped
     healthcheck:
@@ -210,18 +221,15 @@ services:
       "
     logging: *default-logging
 
+# Volumes nomeados criados pelo compose no primeiro up (nao exige criacao previa).
 volumes:
   postgres-data:
     name: viralforge_postgres_data
-    external: true
   redis-data:
     name: viralforge_redis_data
-    external: true
   minio-data:
     name: viralforge_minio_data
-    external: true
   api-uploads:
     name: viralforge_api_uploads
-    external: true
   pgbackup-data:
     name: viralforge_pgbackup_data

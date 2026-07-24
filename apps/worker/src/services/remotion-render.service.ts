@@ -59,9 +59,13 @@ export class RemotionRenderService {
       };
 
       const serveUrl = await this.getBundleUrl();
+      // Usa o chromium do sistema quando disponivel (imagem Docker), evitando
+      // o download de chrome-headless-shell em runtime. Vazio => default do Remotion.
+      const browserExecutable = process.env.REMOTION_BROWSER_EXECUTABLE || undefined;
       const composition = await selectComposition({
         serveUrl,
         id: 'VerticalClip',
+        browserExecutable,
         inputProps: inputProps as unknown as Record<string, unknown>,
       });
 
@@ -70,6 +74,7 @@ export class RemotionRenderService {
         serveUrl,
         codec: 'h264',
         outputLocation: outputPath,
+        browserExecutable,
         inputProps: inputProps as unknown as Record<string, unknown>,
         chromiumOptions: {
           enableMultiProcessOnLinux: true,
