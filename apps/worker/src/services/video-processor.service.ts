@@ -1,9 +1,10 @@
 import { Injectable, Logger } from "@nestjs/common";
-import { LlmClipAnalyzerService, type LlmTelemetry } from "@viralforge/clip-analyzer";
+import { LlmClipAnalyzerService, MODEL_COST_PER_1K, type LlmTelemetry } from "@viralforge/clip-analyzer";
 import type { QueueJobPayload } from "@viralforge/shared";
 import { unlink } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
+import { llmCostUsdTotal, llmTokensTotal } from "../metrics.js";
 import { aiFallbackAllowed, computeClipTarget, type RenderClipsSummary, type TranscriptWithMetadata } from "../types/pipeline.types.js";
 import { ApiKeyService } from "./api-key.service.js";
 import { ClipPersistenceService } from "./clip-persistence.service.js";
@@ -25,16 +26,6 @@ function repoRoot() {
         ? resolve(process.cwd(), "../..")
         : process.cwd();
 }
-
-const MODEL_COST_PER_1K: Record<string, number> = {
-    "deepseek-chat": 0.00027,
-    "deepseek-reasoner": 0.00055,
-    "gpt-4o-mini": 0.00015,
-    "gpt-4o": 0.0025,
-    "claude-3-haiku-20240307": 0.00025,
-    "claude-3-sonnet-20240229": 0.003,
-    "gemini/gemini-2.0-flash-001": 0.00015,
-};
 
 @Injectable()
 export class VideoProcessorService {
@@ -322,6 +313,13 @@ export class VideoProcessorService {
             const costPerToken =
                 llmTelemetry.totalTokens > 0 ? this.estimateCost(llmTelemetry) : null;
             llmCostForMetrics = costPerToken;
+            // Métricas em tempo real: permite alertar sobre gasto anormal de IA.
+            if (llmTelemetry.totalTokens > 0) {
+                llmTokensTotal.inc(llmTelemetry.totalTokens);
+            }
+            if (costPerToken && costPerToken > 0) {
+                llmCostUsdTotal.inc(costPerToken);
+            }
             await this.prisma.project.update({
                 where: { id: payload.projectId },
                 data: {
@@ -664,10 +662,10 @@ export class VideoProcessorService {
     }
 
     private estimateCost(telemetry: LlmTelemetry): number | null {
-        const rate =
-            MODEL_COST_PER_1K[telemetry.pass1Model] ??
-            MODEL_COST_PER_1K[telemetry.pass2Model] ??
-            0.0003;
+        // Tabela de preços vem do clip-analyzer (fonte única da verdade).
+        const rate = MODEL_COST_PER_1K[telemetry.pass1Model]
+            ?? MODEL_COST_PER_1K[telemetry.pass2Model]
+            ?? 0.0003;
         return Math.round(telemetry.totalTokens * rate * 1000) / 1000;
     }
 }

@@ -12,6 +12,9 @@ const mockPrisma = {
     project: {
         count: vi.fn(),
     },
+    user: {
+        findUnique: vi.fn(),
+    },
 };
 
 function makeQuota(overrides: Record<string, unknown> = {}) {
@@ -30,6 +33,9 @@ describe("QuotaService", () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        // Padrão dos testes de quota: conta verificada. O limite de contas não
+        // verificadas tem testes próprios em "conta não verificada".
+        mockPrisma.user.findUnique.mockResolvedValue({ emailVerified: true });
         service = new QuotaService(mockPrisma as unknown as PrismaService);
     });
 
@@ -235,6 +241,36 @@ describe("QuotaService", () => {
                 where: { userId },
                 data: { monthlyRenders: { increment: 1 } },
             });
+        });
+    });
+
+    describe("conta não verificada", () => {
+        // Login não exige e-mail verificado (proposital), mas sem teto uma conta
+        // descartável poderia subir vídeos de até 500MB indefinidamente.
+        it("bloqueia criação além do teto quando o e-mail não foi verificado", async () => {
+            mockPrisma.userQuota.findUnique.mockResolvedValue(makeQuota());
+            mockPrisma.user.findUnique.mockResolvedValue({ emailVerified: false });
+            mockPrisma.project.count.mockResolvedValue(2); // teto padrão = 2
+
+            await expect(service.ensureCanCreateProject("user123")).rejects.toThrow(
+                ForbiddenException,
+            );
+        });
+
+        it("permite criar dentro do teto mesmo sem verificar", async () => {
+            mockPrisma.userQuota.findUnique.mockResolvedValue(makeQuota());
+            mockPrisma.user.findUnique.mockResolvedValue({ emailVerified: false });
+            mockPrisma.project.count.mockResolvedValue(1);
+
+            await expect(service.ensureCanCreateProject("user123")).resolves.not.toThrow();
+        });
+
+        it("não aplica o teto quando o e-mail está verificado", async () => {
+            mockPrisma.userQuota.findUnique.mockResolvedValue(makeQuota());
+            mockPrisma.user.findUnique.mockResolvedValue({ emailVerified: true });
+            mockPrisma.project.count.mockResolvedValue(4); // abaixo do limite free (5)
+
+            await expect(service.ensureCanCreateProject("user123")).resolves.not.toThrow();
         });
     });
 

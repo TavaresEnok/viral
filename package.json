@@ -25,6 +25,7 @@
         "smoke:security": "tsx scripts/security-smoke-test.ts",
         "services:install": "bash scripts/install-systemd-services.sh",
         "dataset:evaluate": "tsx scripts/dataset-evaluate.ts",
+        "feedback:dataset": "corepack pnpm --filter @viralforge/database exec tsx ../../scripts/feedback-dataset.ts",
         "model:compare": "tsx scripts/model-compare.ts",
         "test:e2e": "playwright test --config=apps/web/playwright.config.ts",
         "test:e2e:ui": "playwright test --ui --config=apps/web/playwright.config.ts",

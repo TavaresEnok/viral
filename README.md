@@ -100,9 +100,80 @@ corepack pnpm release:check:quick
 corepack pnpm release:check:ci
 ```
 
+## Deploy com Docker (single-host)
+
+Todos os serviços sobem em containers, sem instalar nada no host além do Docker:
+
+```bash
+docker compose -p viralforge --env-file infra/.env.deploy \
+  -f infra/docker-compose.deploy.yml up -d --build
+```
+
+Migrações e seed rodam pela imagem do worker (base Debian — o motor de migração
+do Prisma não roda no Alpine da API):
+
+```bash
+docker compose -p viralforge --env-file infra/.env.deploy \
+  -f infra/docker-compose.deploy.yml run --rm --no-deps --entrypoint sh worker \
+  -c 'cd packages/database && node_modules/.bin/prisma migrate deploy --schema prisma/schema.prisma'
+```
+
+Notas do caminho Docker:
+
+- Só o `web` precisa de porta pública; ele faz proxy de `/api` para a API na
+  rede interna. `API_PROXY_TARGET` é **build-arg**, porque o Next resolve os
+  rewrites em build, não em runtime.
+- Defina `cpus`/`mem_limit` por serviço quando o host for compartilhado com
+  outra aplicação — o worker sozinho satura CPU durante o render.
+- O Chromium (~1GB) só é necessário para o engine opcional Remotion. Rodando só
+  o engine padrão (FFmpeg), construa o worker com
+  `--build-arg INSTALL_CHROMIUM=false`.
+
+## Armazenamento
+
+Os arquivos ficam em disco local (`STORAGE_ROOT`), compartilhado entre API e
+worker por volume. Não há integração S3/MinIO ativa: a API serve os clips
+diretamente. Isso implica que **API e worker precisam do mesmo filesystem** —
+migrar para S3 é o pré-requisito para rodar o worker em outra máquina.
+
+## Ajustes finos
+
+| Variável | Padrão | Para que serve |
+| --- | --- | --- |
+| `LLM_MAX_COST_USD` | `0.5` | Teto de custo projetado por análise. Aborta antes de gastar. `0` desativa. |
+| `LLM_MAX_OUTPUT_TOKENS` | `8000` | Limite de tokens de resposta do modelo. |
+| `LLM_TIMEOUT_MS` | `120000` | Timeout da chamada ao provider. |
+| `LLM_MAP_REDUCE` | `true` | Vídeo longo é analisado em janelas em vez de amostrado. `false` volta ao modo antigo. |
+| `STORAGE_RETENTION_DAYS` | `14` | Faxina automática de uploads antigos. `0` desativa. |
+| `UNVERIFIED_MAX_PROJECTS` | `2` | Teto de projetos para conta sem e-mail verificado. `0` desativa. |
+| `QUEUE_METRICS_INTERVAL_MS` | `15000` | Intervalo de amostragem da profundidade da fila. |
+
+## Observabilidade
+
+- API: métricas Prometheus em `GET /metrics`.
+- Worker: métricas em `GET /metrics` na `WORKER_HEALTH_PORT` (padrão 3012) —
+  inclui `viralforge_queue_depth` (com o estado `dlq`), `viralforge_jobs_total`,
+  `viralforge_stage_duration_seconds` e `viralforge_llm_cost_usd_total`.
+- Alertas que valem a pena: fila `waiting` crescendo, `dlq` > 0 e aumento de
+  `viralforge_jobs_total{status="failed"}`.
+
+## Qualidade dos cortes
+
+O feedback dos usuários vira um benchmark reproduzível:
+
+```bash
+corepack pnpm feedback:dataset
+corepack pnpm dataset:evaluate -- \
+  --dataset benchmarks/feedback/dataset.json \
+  --predictions benchmarks/feedback/predictions.json
+```
+
+Cortes que o usuário manteve viram ground truth; os que a IA propôs viram
+predições. Assim dá para medir se uma troca de modelo melhora ou piora de fato.
+
 ## Observações
 
 - Upload máximo: 500MB.
 - API não processa vídeo; o processamento pesado roda no worker via BullMQ/Redis.
-- O projeto local usa Postgres, Redis e MinIO via Docker Compose.
+- O projeto local usa Postgres e Redis via Docker Compose.
 - O download de clips exige autenticação.

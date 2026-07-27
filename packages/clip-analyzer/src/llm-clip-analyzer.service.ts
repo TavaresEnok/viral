@@ -16,6 +16,47 @@ const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 const PROMPTS_DIR = resolve(MODULE_DIR, 'prompts');
 const MAX_SEGMENTS = 420;
 const MAX_BLOCK_CHARS = 70_000;
+
+// --- Controle de custo/latência da chamada ao LLM -------------------------
+// Sem teto, um transcript grande + retries podia gerar custo ilimitado.
+// O custo por análise fica limitado a: (input estimado + MAX_OUTPUT_TOKENS).
+const MAX_OUTPUT_TOKENS = Number(process.env.LLM_MAX_OUTPUT_TOKENS ?? 8_000);
+const LLM_TIMEOUT_MS = Number(process.env.LLM_TIMEOUT_MS ?? 120_000);
+// Teto de custo projetado por análise (USD). 0 desativa a checagem.
+const MAX_COST_USD = Number(process.env.LLM_MAX_COST_USD ?? 0.5);
+// ~4 caracteres por token é a aproximação usual para PT/EN.
+const CHARS_PER_TOKEN = 4;
+
+// --- Análise de vídeos longos -------------------------------------------
+// Acima de MAX_SEGMENTS a transcrição não cabe numa chamada. A estratégia
+// antiga era AMOSTRAR (descartando trechos inteiros — o melhor corte podia
+// nunca ser visto pelo modelo). Com map-reduce, cada janela é analisada e os
+// candidatos são consolidados no fim. LLM_MAP_REDUCE=false volta ao antigo.
+const MAP_REDUCE_ENABLED = (process.env.LLM_MAP_REDUCE ?? 'true') !== 'false';
+// Sobreposição entre janelas para não cortar um bom momento na fronteira.
+const WINDOW_OVERLAP_SEGMENTS = 12;
+// Acima disso dois candidatos são considerados o mesmo corte (fração da
+// duração do menor). Usado ao consolidar janelas com sobreposição.
+const DEDUPE_OVERLAP_RATIO = 0.5;
+
+/**
+ * Preço em USD por 1k tokens. Fonte única da verdade — o worker importa daqui
+ * em vez de manter uma cópia própria da tabela.
+ */
+export const MODEL_COST_PER_1K: Record<string, number> = {
+  'deepseek-chat': 0.00027,
+  'deepseek-reasoner': 0.00055,
+  'gpt-4o-mini': 0.00015,
+  'gpt-4o': 0.0025,
+  'claude-3-haiku-20240307': 0.00025,
+  'claude-3-sonnet-20240229': 0.003,
+  'gemini/gemini-2.0-flash-001': 0.00015,
+};
+
+/** Preço por 1k tokens do modelo, com fallback conservador para desconhecidos. */
+export function modelCostPer1k(model: string): number {
+  return MODEL_COST_PER_1K[model] ?? 0.001;
+}
 const DURATION_CLAMP_TOLERANCE_S = 5;
 
 async function withRetry<T>(
@@ -119,6 +160,11 @@ export class LlmClipAnalyzerService {
     return new OpenAI({
       apiKey: config.apiKey,
       baseURL: config.baseURL ?? 'https://api.deepseek.com',
+      // Timeout explícito: sem isso uma chamada pendurada trava o job inteiro.
+      timeout: LLM_TIMEOUT_MS,
+      // O retry é feito por withRetry() aqui. Deixar o retry do SDK ligado
+      // multiplicava as tentativas (3 x 3 = até 9 chamadas pagas por análise).
+      maxRetries: 0,
     });
   }
 
@@ -140,7 +186,6 @@ export class LlmClipAnalyzerService {
       throw new Error('Provider de IA não configurado.');
     }
 
-    const transcriptBlock = this.buildTranscriptBlock(input.transcript);
     const preferredDuration = input.preferredDuration ?? 45;
     const [systemPrompt, userTemplate] = await Promise.all([
       this.loadPrompt('system.txt'),
@@ -152,28 +197,193 @@ export class LlmClipAnalyzerService {
     const feedbackSection = input.feedbackNotes?.trim()
       ? `\n\n# HISTÓRICO DE FEEDBACK DESTE USUÁRIO\n\nAjuste sua severidade com base nas rejeições anteriores deste usuário:\n\n${input.feedbackNotes.trim()}`
       : '';
-    const userPrompt =
+
+    // Vídeo longo: analisa em janelas em vez de amostrar a transcrição inteira.
+    // Vídeo curto cai numa única janela e o comportamento é idêntico ao anterior.
+    const windows = MAP_REDUCE_ENABLED
+      ? this.buildAnalysisWindows(input.transcript.segments)
+      : [input.transcript.segments];
+    const useMapReduce = windows.length > 1;
+
+    const buildUserPrompt = (segments: TranscriptSegment[], clipsWanted: number) =>
       userTemplate
         .replace('{clipStyle}', input.clipStyle)
         .replace('{language}', input.language)
         .replace('{preferredDuration}', String(preferredDuration))
-        .replace('{maxClips}', String(maxClips))
-        .replace('{transcriptBlock}', transcriptBlock) + feedbackSection;
+        .replace('{maxClips}', String(clipsWanted))
+        .replace('{transcriptBlock}', this.buildTranscriptBlock({ ...input.transcript, segments })) +
+      feedbackSection;
+
+    // Cada janela busca um pouco mais que a fatia proporcional, para o ranking
+    // final ter margem de escolha entre janelas.
+    const clipsPerWindow = useMapReduce
+      ? Math.max(2, Math.ceil((maxClips / windows.length) * 1.5))
+      : maxClips;
+    const userPrompts = windows.map((segments) => buildUserPrompt(segments, clipsPerWindow));
+
+    this.assertWithinCostBudget(systemWithProfile, userPrompts);
+
+    if (useMapReduce) {
+      this.logger(
+        `[clip-analyzer] transcrição longa (${input.transcript.segments.length} segmentos): ` +
+          `analisando em ${windows.length} janelas de até ${clipsPerWindow} cortes cada`,
+      );
+    }
+
+    let tokensUsed = 0;
+    let failedPasses = 0;
+    const rawCandidates: ClipSuggestion[] = [];
+    for (const [index, userPrompt] of userPrompts.entries()) {
+      const pass = await this.runAnalysisPass(systemWithProfile, userPrompt, index, userPrompts.length);
+      tokensUsed += pass.tokensUsed;
+      if (pass.failed) {
+        failedPasses += 1;
+        continue;
+      }
+      rawCandidates.push(...pass.clips);
+    }
+
+    // Janelas com sobreposição podem sugerir o mesmo momento duas vezes.
+    const clips = useMapReduce ? this.mergeWindowCandidates(rawCandidates) : rawCandidates;
+
+    const telemetry: LlmTelemetry = {
+      pass1Tokens: tokensUsed,
+      pass2Tokens: 0,
+      totalTokens: tokensUsed,
+      pass1Model: this.model,
+      pass2Model: '',
+      pass1CandidateCount: clips.length,
+      pass2ClipCount: 0,
+      approvedClipCount: 0,
+      // Só é falha de verdade se nenhuma janela produziu candidato.
+      pass1Failed: failedPasses > 0 && clips.length === 0,
+      pass2Failed: false,
+      rejectionRate: 1,
+    };
+
+    if (!clips.length) {
+      return { clips: [], telemetry };
+    }
+
+    const validatedClips = this.applySemanticValidation(clips, input.transcript, {
+      maxClips,
+      minViralScore: input.minViralScore ?? 0,
+    });
+    telemetry.approvedClipCount = validatedClips.length;
+    telemetry.rejectionRate = clips.length > 0 ? 1 - validatedClips.length / clips.length : 1;
+    this.logger(
+      `[clip-analyzer] ${useMapReduce ? `map-reduce (${windows.length} janelas)` : 'avaliação única'}: ` +
+        `${validatedClips.length} clips aprovados de ${clips.length} candidatos`,
+    );
+
+    return { clips: validatedClips, telemetry };
+  }
+
+  /**
+   * Divide os segmentos em janelas que cabem numa chamada, respeitando tanto o
+   * limite de segmentos quanto o de caracteres, com sobreposição entre janelas.
+   * Retorna uma única janela quando a transcrição inteira já cabe.
+   */
+  private buildAnalysisWindows(segments: TranscriptSegment[]): TranscriptSegment[][] {
+    const totalChars = segments.reduce((sum, s) => sum + s.text.length + 24, 0);
+    if (segments.length <= MAX_SEGMENTS && totalChars <= MAX_BLOCK_CHARS) {
+      return [segments];
+    }
+
+    const windows: TranscriptSegment[][] = [];
+    let index = 0;
+    while (index < segments.length) {
+      const window: TranscriptSegment[] = [];
+      let chars = 0;
+      while (index < segments.length && window.length < MAX_SEGMENTS) {
+        const segmentChars = segments[index].text.length + 24;
+        if (chars + segmentChars > MAX_BLOCK_CHARS && window.length > 0) break;
+        window.push(segments[index]);
+        chars += segmentChars;
+        index += 1;
+      }
+      windows.push(window);
+      if (index >= segments.length) break;
+      // Recua para sobrepor com a janela seguinte.
+      index = Math.max(index - WINDOW_OVERLAP_SEGMENTS, index - window.length + 1);
+    }
+    return windows;
+  }
+
+  /**
+   * Consolida candidatos de várias janelas: remove duplicatas por sobreposição
+   * temporal (mantendo o de maior viral_score) e ordena por score.
+   */
+  private mergeWindowCandidates(candidates: ClipSuggestion[]): ClipSuggestion[] {
+    const ordered = [...candidates].sort((a, b) => b.viral_score - a.viral_score);
+    const kept: ClipSuggestion[] = [];
+
+    for (const candidate of ordered) {
+      const duplicate = kept.some((existing) => {
+        const overlap =
+          Math.min(existing.end, candidate.end) - Math.max(existing.start, candidate.start);
+        if (overlap <= 0) return false;
+        const shorter = Math.min(existing.end - existing.start, candidate.end - candidate.start);
+        return shorter > 0 && overlap / shorter >= DEDUPE_OVERLAP_RATIO;
+      });
+      // Como já vem ordenado por score, o primeiro a ocupar a faixa é o melhor.
+      if (!duplicate) kept.push(candidate);
+    }
+
+    return kept;
+  }
+
+  /**
+   * Falha antes de gastar se o custo projetado do conjunto de chamadas passar do
+   * teto. Considera todas as janelas — o teto é por análise, não por chamada.
+   */
+  private assertWithinCostBudget(systemPrompt: string, userPrompts: string[]): void {
+    const inputChars = userPrompts.reduce(
+      (sum, prompt) => sum + prompt.length + systemPrompt.length,
+      0,
+    );
+    const estimatedInputTokens = Math.ceil(inputChars / CHARS_PER_TOKEN);
+    const outputTokens = MAX_OUTPUT_TOKENS * userPrompts.length;
+    const projectedCostUsd =
+      ((estimatedInputTokens + outputTokens) / 1000) * modelCostPer1k(this.model);
+
+    if (MAX_COST_USD > 0 && projectedCostUsd > MAX_COST_USD) {
+      throw new Error(
+        `Custo projetado da análise (US$ ${projectedCostUsd.toFixed(4)} em ${userPrompts.length} ` +
+          `chamada(s)) excede o teto LLM_MAX_COST_USD=${MAX_COST_USD}. Use um vídeo mais curto, ` +
+          `um modelo mais barato ou aumente o teto (modelo atual: ${this.model}).`,
+      );
+    }
+
+    this.logger(
+      `[clip-analyzer] custo projetado US$ ${projectedCostUsd.toFixed(4)} ` +
+        `(~${estimatedInputTokens} tokens de entrada em ${userPrompts.length} chamada(s))`,
+    );
+  }
+
+  /** Executa uma chamada ao modelo e devolve os candidatos daquela janela. */
+  private async runAnalysisPass(
+    systemPrompt: string,
+    userPrompt: string,
+    index: number,
+    total: number,
+  ): Promise<{ clips: ClipSuggestion[]; tokensUsed: number; failed: boolean }> {
+    const label = total > 1 ? `janela ${index + 1}/${total}` : 'passada única';
 
     const createCompletion = (jsonMode: boolean) =>
       this.client!.chat.completions.create({
         model: this.model,
         temperature: 0.3,
+        max_tokens: MAX_OUTPUT_TOKENS,
         ...(jsonMode ? { response_format: { type: 'json_object' as const } } : {}),
         messages: [
-          { role: 'system', content: systemWithProfile },
+          { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
       });
 
     let tokensUsed = 0;
     let rawContent = '';
-    let callFailed = false;
     try {
       let completion;
       try {
@@ -190,66 +400,40 @@ export class LlmClipAnalyzerService {
       tokensUsed = completion.usage?.total_tokens ?? 0;
       rawContent = completion.choices[0]?.message?.content ?? '';
     } catch (error) {
-      this.logger(`[clip-analyzer] chamada ao provider falhou após retries: ${(error as Error).message}`);
-      callFailed = true;
-    }
-
-    const telemetry: LlmTelemetry = {
-      pass1Tokens: tokensUsed,
-      pass2Tokens: 0,
-      totalTokens: tokensUsed,
-      pass1Model: this.model,
-      pass2Model: '',
-      pass1CandidateCount: 0,
-      pass2ClipCount: 0,
-      approvedClipCount: 0,
-      pass1Failed: callFailed,
-      pass2Failed: false,
-      rejectionRate: 1,
-    };
-
-    if (callFailed) {
-      return { clips: [], telemetry };
+      this.logger(
+        `[clip-analyzer] ${label}: chamada ao provider falhou após retries: ${(error as Error).message}`,
+      );
+      return { clips: [], tokensUsed, failed: true };
     }
 
     const parsedResponse = this.parseModelResponse(rawContent);
     if (!parsedResponse) {
-      this.logger('[llm-clip-analyzer] resposta inválida após fallback de parsing, retornando []');
-      return { clips: [], telemetry };
+      // Resposta ilegível é problema de qualidade do modelo, não falha de
+      // chamada — `failed` sinaliza apenas erro de comunicação com o provider.
+      this.logger(`[llm-clip-analyzer] ${label}: resposta inválida após fallback de parsing`);
+      return { clips: [], tokensUsed, failed: false };
     }
 
     const clips = this.parseClipSuggestions(parsedResponse);
-    telemetry.pass1CandidateCount = clips.length;
     if (!clips.length) {
       // Observabilidade: quando o modelo não produz cortes, loga o modelo e um
       // trecho da resposta. Isso evidencia modelo fraco/incapaz (ex.: modelos
       // grátis pequenos) devolvendo {"clips":[]} ou JSON fora do schema.
       this.logger(
-        `[llm-clip-analyzer] modelo "${this.model}" não produziu cortes válidos. Trecho da resposta: ${rawContent
-          .slice(0, 400)
-          .replace(/\s+/g, ' ')
-          .trim()}`,
+        `[llm-clip-analyzer] ${label}: modelo "${this.model}" não produziu cortes válidos. ` +
+          `Trecho da resposta: ${rawContent.slice(0, 400).replace(/\s+/g, ' ').trim()}`,
       );
       const validationResult = clipSuggestionResponseSchema.safeParse(parsedResponse);
       if (!validationResult.success) {
         this.logger(
-          `[llm-clip-analyzer] resposta fora do schema: ${validationResult.error.issues
+          `[llm-clip-analyzer] ${label}: resposta fora do schema: ${validationResult.error.issues
             .map((issue) => `${issue.path.join('.') || 'root'}: ${issue.message}`)
             .join('; ')}`,
         );
       }
-      return { clips: [], telemetry };
     }
 
-    const validatedClips = this.applySemanticValidation(clips, input.transcript, {
-      maxClips,
-      minViralScore: input.minViralScore ?? 0,
-    });
-    telemetry.approvedClipCount = validatedClips.length;
-    telemetry.rejectionRate = clips.length > 0 ? 1 - validatedClips.length / clips.length : 1;
-    this.logger(`[clip-analyzer] avaliação única: ${validatedClips.length} clips aprovados de ${clips.length} sugeridos pelo modelo`);
-
-    return { clips: validatedClips, telemetry };
+    return { clips, tokensUsed, failed: false };
   }
 
   private emptyTelemetry(): LlmTelemetry {
@@ -522,8 +706,12 @@ export class LlmClipAnalyzerService {
       viral_score: viralScore,
       opening_strength: opening,
       context_independence_score: context,
-      emotional_density: emotional,
-      quotability,
+      // toNumber() devolve null quando o campo não veio. O schema marca estes
+      // dois como opcionais, mas `null` não satisfaz `z.number().optional()` —
+      // o clip inteiro era descartado em silêncio quando o modelo omitia um
+      // deles (comum em modelos menores), zerando a análise.
+      emotional_density: emotional ?? undefined,
+      quotability: quotability ?? undefined,
       risk_of_bad_cut: this.toRiskOfBadCut(clip.risk_of_bad_cut ?? clip.riskOfBadCut),
       suggested_caption_title: this.toString(clip.suggested_caption_title ?? clip.suggestedCaptionTitle),
       first_three_seconds_hook: this.toString(clip.first_three_seconds_hook ?? clip.firstThreeSecondsHook),

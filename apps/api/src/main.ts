@@ -46,7 +46,9 @@ function validateEnv() {
     requireEnv('WEB_ORIGIN');
     requireEnv('STORAGE_ROOT');
     requireEnv('POSTGRES_PASSWORD');
-    requireEnv('MINIO_ROOT_PASSWORD');
+    // MINIO_ROOT_PASSWORD não é mais exigido: o armazenamento é em disco local
+    // (STORAGE_ROOT) e nenhum código lê MINIO_*/S3. Exigir a variável só criava
+    // um requisito fantasma que impedia o boot sem trazer benefício.
 
     // Billing: if STRIPE_SECRET_KEY is configured, all related vars must be set
     if (process.env.STRIPE_SECRET_KEY) {

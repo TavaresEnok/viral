@@ -2,6 +2,7 @@ import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from "@ne
 import { createRedisConnectionConfig } from "@viralforge/shared";
 import { Redis } from "ioredis";
 import { performance } from "node:perf_hooks";
+import { stageDuration } from "../metrics.js";
 import type { PipelineMetricDraft } from "../types/pipeline.types.js";
 import { PrismaService } from "./prisma.service.js";
 
@@ -29,6 +30,11 @@ export class PipelineMetricsService implements OnModuleInit, OnModuleDestroy {
         return Math.round(((performance.now() - startedAt) / 1000) * 1000) / 1000;
     }
 
+    /** Nome da etapa sem o sufixo `_sec`, usado como label da métrica. */
+    private stageLabel(key: string): string {
+        return key.replace(/_sec$/, "");
+    }
+
     async measure<T>(
         timings: Record<string, number>,
         key: string,
@@ -39,6 +45,7 @@ export class PipelineMetricsService implements OnModuleInit, OnModuleDestroy {
             return await fn();
         } finally {
             timings[key] = this.elapsedSec(startedAt);
+            stageDuration.observe({ stage: this.stageLabel(key) }, timings[key]);
         }
     }
 
@@ -48,6 +55,7 @@ export class PipelineMetricsService implements OnModuleInit, OnModuleDestroy {
             return fn();
         } finally {
             timings[key] = this.elapsedSec(startedAt);
+            stageDuration.observe({ stage: this.stageLabel(key) }, timings[key]);
         }
     }
 

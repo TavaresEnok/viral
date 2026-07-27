@@ -38,7 +38,7 @@ function validateEnv() {
   if (process.env.NODE_ENV === 'production') {
     requireEnv('STORAGE_ROOT');
     requireEnv('POSTGRES_PASSWORD');
-    requireEnv('MINIO_ROOT_PASSWORD');
+    // MINIO_ROOT_PASSWORD removido: armazenamento é em disco local (STORAGE_ROOT).
   }
 }
 

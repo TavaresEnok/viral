@@ -9,6 +9,13 @@ build/
 .turbo/
 *.tsbuildinfo
 
+# Artefatos de build nunca ficam em src/ — o TypeScript compila para dist/.
+# Nos pacotes ESM, um .js obsoleto ao lado do .ts pode ser resolvido no lugar do
+# código atual (aconteceu com secrets.js, que deriva as chaves de criptografia).
+packages/*/src/**/*.js
+apps/api/src/**/*.js
+apps/worker/src/**/*.js
+
 # Environment files — NEVER commit secrets
 .env
 .env.local

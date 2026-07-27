@@ -17,10 +17,22 @@ RUN pnpm --filter @viralforge/worker build
 
 FROM node:20-bookworm-slim AS runner
 RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
-# ffmpeg + libopencv = engine de render PADRAO (FFmpeg + face-engine).
+# ffmpeg + OpenCV = engine de render PADRAO (FFmpeg + face-engine).
+# Aqui vao apenas as libs de RUNTIME que o binario face_engine realmente linka
+# (verificado com ldd) — libopencv-dev traria headers e todos os modulos, ~1GB
+# desnecessario numa imagem de execucao. Sufixo 406 = OpenCV 4.6 do bookworm.
 # chromium = engine OPCIONAL Remotion (RENDER_ENGINE=remotion), usado via
 # REMOTION_BROWSER_EXECUTABLE para nao depender de download em runtime.
-RUN apt-get update && apt-get install -y ffmpeg libopencv-dev python3 wget chromium && rm -rf /var/lib/apt/lists/*
+# O chromium responde por ~1GB da imagem e SÓ é usado pelo engine opcional
+# Remotion. Quem roda apenas o engine padrão (FFmpeg) pode economizar com
+# --build-arg INSTALL_CHROMIUM=false.
+ARG INSTALL_CHROMIUM=true
+RUN apt-get update && apt-get install -y \
+      ffmpeg python3 wget \
+      libopencv-core406 libopencv-dnn406 libopencv-imgcodecs406 \
+      libopencv-imgproc406 libopencv-videoio406 \
+    && if [ "$INSTALL_CHROMIUM" = "true" ]; then apt-get install -y chromium; fi \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=builder /app/packages packages
 COPY --from=builder /app/apps/worker/dist apps/worker/dist

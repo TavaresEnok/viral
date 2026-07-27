@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
 import { Logger } from '@nestjs/common';
+import { renderMetrics } from './metrics.js';
 import type { PrismaService } from './services/prisma.service.js';
 
 const logger = new Logger('HealthServer');
@@ -21,6 +22,16 @@ export function startHealthServer(prisma: PrismaService, redisCheck: () => Promi
       } catch {
         res.writeHead(503, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ status: 'error', db: 'unreachable' }));
+      }
+    } else if (req.url === '/metrics') {
+      try {
+        const { contentType, body } = await renderMetrics();
+        res.writeHead(200, { 'Content-Type': contentType });
+        res.end(body);
+      } catch (error) {
+        logger.error({ msg: 'Falha ao coletar métricas', error: (error as Error).message });
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end('metrics collection failed');
       }
     } else {
       res.writeHead(404);

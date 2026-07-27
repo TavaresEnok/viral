@@ -1,0 +1,190 @@
+# ==========================================================================
+# ViralForge — compose de deploy ISOLADO (convive com DRAC/ajustcam)
+#
+# Uso (sempre com project name -p viralforge e este arquivo):
+#   docker compose -p viralforge --env-file infra/.env.deploy \
+#     -f infra/docker-compose.deploy.yml up -d --build
+#
+# NUNCA rode "docker compose down" sem -p viralforge — isso protege o DRAC.
+#
+# Portas:
+#   - web  -> 0.0.0.0:8090  (unica publica; navegador so fala com o web)
+#   - api  -> 127.0.0.1:3001 (loopback, debug; browser usa /api via proxy do web)
+#   - postgres/redis -> SEM porta no host (so rede interna viralforge_default)
+# ==========================================================================
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: viralforge-postgres
+    cpus: 1.0
+    mem_limit: 512m
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: ${POSTGRES_DB:?}
+    # Sem "ports": acessivel apenas pela rede interna (isola do vms-postgres:5432)
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging: *default-logging
+
+  redis:
+    image: redis:7-alpine
+    container_name: viralforge-redis
+    cpus: 0.5
+    mem_limit: 256m
+    # Sem "ports": isola do vms-redis:6379
+    volumes:
+      - redis-data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging: *default-logging
+
+  # MinIO removido: nenhum código lê MINIO_*/S3 — o armazenamento real é em
+  # disco local (volume api-uploads, servido pela API via sendFile). Manter o
+  # container só consumia RAM. Migrar para S3 de verdade é o caminho para
+  # escalar horizontalmente (worker em outra máquina), mas hoje não é o caso.
+
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    container_name: viralforge-api
+    cpus: 1.5
+    mem_limit: 512m
+    ports:
+      - "127.0.0.1:3001:3001"   # loopback, livre
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: ${JWT_SECRET:?}
+      MASTER_SECRET: ${MASTER_SECRET:?}
+      WEB_ORIGIN: ${WEB_ORIGIN:?}
+      STORAGE_ROOT: /data/uploads
+      NODE_ENV: production
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      ALLOW_AI_FALLBACK: ${ALLOW_AI_FALLBACK:-true}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+    volumes:
+      - api-uploads:/data/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    logging: *default-logging
+
+  worker:
+    build:
+      context: ..
+      dockerfile: apps/worker/Dockerfile
+    container_name: viralforge-worker
+    # Tetos p/ proteger o DRAC de um render pesado (box compartilhado, 7.6GB RAM)
+    cpus: 3.0
+    mem_limit: 2560m
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: ${JWT_SECRET:?}
+      MASTER_SECRET: ${MASTER_SECRET:?}
+      STORAGE_ROOT: /data/uploads
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      NODE_ENV: production
+      WORKER_HEALTH_PORT: 3012
+      ALLOW_AI_FALLBACK: ${ALLOW_AI_FALLBACK:-true}
+      # #10 faxina automatica de uploads antigos (Janitor cron ja embutido)
+      STORAGE_RETENTION_DAYS: ${STORAGE_RETENTION_DAYS:-7}
+      AUDIT_RETENTION_DAYS: ${AUDIT_RETENTION_DAYS:-90}
+      # #9 concorrencia conservadora p/ nao competir com a producao
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-1}
+      RENDER_CLIP_CONCURRENCY: ${RENDER_CLIP_CONCURRENCY:-2}
+      FFMPEG_THREADS: ${FFMPEG_THREADS:-2}
+      FFMPEG_PRESET: ${FFMPEG_PRESET:-veryfast}
+      REMOTION_CONCURRENCY: ${REMOTION_CONCURRENCY:-2}
+      # #11 chromium do sistema p/ o engine opcional Remotion
+      REMOTION_BROWSER_EXECUTABLE: ${REMOTION_BROWSER_EXECUTABLE:-/usr/bin/chromium}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+    volumes:
+      - api-uploads:/data/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3012/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    logging: *default-logging
+
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+      args:
+        API_PROXY_TARGET: http://api:3001
+    container_name: viralforge-web
+    cpus: 1.0
+    mem_limit: 512m
+    ports:
+      - "0.0.0.0:8090:3000"     # UNICA porta publica
+    environment:
+      NODE_ENV: production
+      # Proxy de mesma origem: navegador fala so com o web; /api -> container api
+      API_PROXY_TARGET: http://api:3001
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+    depends_on:
+      api:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging: *default-logging
+
+volumes:
+  postgres-data:
+    name: viralforge_postgres_data
+  redis-data:
+    name: viralforge_redis_data
+  api-uploads:
+    name: viralforge_api_uploads

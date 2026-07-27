@@ -141,6 +141,35 @@ export class QuotaService {
                 `Você atingiu o limite de ${planLimits.maxProjects} projetos/mês no plano ${quota.plan}.`,
             );
         }
+
+        await this.ensureVerifiedTrialNotExceeded(userId, projectCount);
+    }
+
+    /**
+     * Conta sem e-mail verificado tem um teto baixo de projetos.
+     *
+     * O login não exige verificação (proposital, para não travar o onboarding),
+     * mas sem nenhum limite uma conta descartável pode subir vídeos de até 500MB
+     * indefinidamente. Aqui o usuário experimenta o produto e só precisa
+     * verificar o e-mail para continuar. UNVERIFIED_MAX_PROJECTS=0 desativa.
+     */
+    private async ensureVerifiedTrialNotExceeded(userId: string, projectCount: number): Promise<void> {
+        const limit = Number(process.env.UNVERIFIED_MAX_PROJECTS ?? 2);
+        if (!Number.isFinite(limit) || limit <= 0) return;
+
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { emailVerified: true },
+        });
+        // Usuário inexistente é problema de autenticação, não de quota.
+        if (!user || user.emailVerified) return;
+
+        if (projectCount >= limit) {
+            throw new ForbiddenException(
+                `Verifique seu e-mail para criar mais projetos. Contas não verificadas podem criar ` +
+                    `até ${limit} projeto(s).`,
+            );
+        }
     }
 
     /**
