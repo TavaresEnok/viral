@@ -19,6 +19,8 @@ import { SettingsModule } from "./settings/settings.module.js";
 import { AuditModule } from "./audit/audit.module.js";
 import { AdminModule } from "./admin/admin.module.js";
 import { MetricsModule } from "./metrics/metrics.module.js";
+import { QuickCaptionModule } from "./quick-caption/quick-caption.module.js";
+import { ChannelImportModule } from "./channel-import/channel-import.module.js";
 
 @Module({
     imports: [
@@ -44,6 +46,8 @@ import { MetricsModule } from "./metrics/metrics.module.js";
         PublicApiModule,
         AdminModule,
         MetricsModule,
+        QuickCaptionModule,
+        ChannelImportModule,
     ],
     providers: [PrismaService],
 })

@@ -4,9 +4,18 @@ import { mkdir, readdir, readFile, stat, unlink } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 import { youtubeDl } from 'youtube-dl-exec';
 import { FfmpegService } from './ffmpeg.service.js';
-import { URL } from 'node:url';
-import { promises as dns } from 'node:dns';
-import { isIP } from 'node:net';
+import { assertPublicHttpUrl } from './url-safety.helper.js';
+
+// Hosts liberados para download de UM vídeo por URL. Inclui as plataformas do
+// importador de canal (channel-import.service.ts lista os vídeos; o download
+// do vídeo individual selecionado reaproveita este método via sourceUrl no
+// fluxo normal de PROCESS_PROJECT).
+export const ALLOWED_DOWNLOAD_HOSTS = [
+  'youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be',
+  'tiktok.com', 'www.tiktok.com', 'm.tiktok.com', 'vm.tiktok.com',
+  'instagram.com', 'www.instagram.com',
+  'kwai.com', 'www.kwai.com', 'm.kwai.com', 'kwai.com.br', 'www.kwai.com.br',
+];
 
 function positiveEnvInt(name: string, fallback: number): number {
   const parsed = Number(process.env[name]);
@@ -24,35 +33,6 @@ function youtubeTranscriptTimeoutMs(): number {
   return positiveEnvInt('YOUTUBE_TRANSCRIPT_TIMEOUT_MS', 60 * 1000);
 }
 
-const PRIVATE_RANGES = [
-  { prefix: '10.', mask: null },
-  { prefix: '172.16.', mask: null },
-  { prefix: '172.17.', mask: null },
-  { prefix: '172.18.', mask: null },
-  { prefix: '172.19.', mask: null },
-  { prefix: '172.20.', mask: null },
-  { prefix: '172.21.', mask: null },
-  { prefix: '172.22.', mask: null },
-  { prefix: '172.23.', mask: null },
-  { prefix: '172.24.', mask: null },
-  { prefix: '172.25.', mask: null },
-  { prefix: '172.26.', mask: null },
-  { prefix: '172.27.', mask: null },
-  { prefix: '172.28.', mask: null },
-  { prefix: '172.29.', mask: null },
-  { prefix: '172.30.', mask: null },
-  { prefix: '172.31.', mask: null },
-  { prefix: '192.168.', mask: null },
-  { prefix: '127.', mask: null },
-  { prefix: '0.', mask: null },
-  { prefix: '169.254.', mask: null },
-];
-
-function isPrivateIp(address: string): boolean {
-  if (isIP(address) !== 4) return false;
-  return PRIVATE_RANGES.some((range) => address.startsWith(range.prefix));
-}
-
 @Injectable()
 export class YoutubeDownloadService {
   private readonly logger = new Logger(YoutubeDownloadService.name);
@@ -60,26 +40,7 @@ export class YoutubeDownloadService {
   constructor(private readonly ffmpeg: FfmpegService) {}
 
   private async validateYoutubeUrl(url: string) {
-    const allowedHosts = ['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be'];
-    let parsed: URL;
-    try {
-      parsed = new URL(url);
-    } catch {
-      throw new Error('URL inválida');
-    }
-    if (!allowedHosts.includes(parsed.hostname)) {
-      throw new Error(`URL não permitida: ${parsed.hostname}`);
-    }
-    if (!['http:', 'https:'].includes(parsed.protocol)) {
-      throw new Error(`Protocolo não permitido: ${parsed.protocol}`);
-    }
-
-    const resolved = await dns.resolve4(parsed.hostname).catch(() => []);
-    for (const ip of resolved) {
-      if (isPrivateIp(ip)) {
-        throw new Error(`URL rejeitada: ${parsed.hostname} resolve para IP privado (SSRF)`);
-      }
-    }
+    await assertPublicHttpUrl(url, ALLOWED_DOWNLOAD_HOSTS);
   }
 
   async download(url: string, baseDir: string): Promise<string> {

@@ -7,6 +7,8 @@ import { performance } from "node:perf_hooks";
 import { llmCostUsdTotal, llmTokensTotal } from "../metrics.js";
 import { aiFallbackAllowed, computeClipTarget, type RenderClipsSummary, type TranscriptWithMetadata } from "../types/pipeline.types.js";
 import { ApiKeyService } from "./api-key.service.js";
+import { BulkCaptionRenderService } from "./bulk-caption-render.service.js";
+import { ChannelImportService } from "./channel-import.service.js";
 import { ClipPersistenceService } from "./clip-persistence.service.js";
 import { ClipValidationService } from "./clip-validation.service.js";
 import { FeedbackProfileService } from "./feedback-profile.service.js";
@@ -46,6 +48,8 @@ export class VideoProcessorService {
         private readonly render: RenderOrchestrationService,
         private readonly feedbackProfile: FeedbackProfileService,
         private readonly transcription: TranscriptionService,
+        private readonly bulkCaptionRender: BulkCaptionRenderService,
+        private readonly channelImport: ChannelImportService,
     ) {}
 
     async process(payload: QueueJobPayload, jobId: string) {
@@ -59,6 +63,14 @@ export class VideoProcessorService {
         }
         if (payload.jobType === "RETRANSCRIBE_CLIP") {
             await this.retranscribeClip(payload, jobId);
+            return;
+        }
+        if (payload.jobType === "RENDER_BULK_ITEM") {
+            await this.bulkCaptionRender.renderItem(payload.itemId, jobId);
+            return;
+        }
+        if (payload.jobType === "LIST_CHANNEL_VIDEOS") {
+            await this.channelImport.listAndSave(payload.requestId, jobId);
             return;
         }
         await this.processProject(payload, jobId);

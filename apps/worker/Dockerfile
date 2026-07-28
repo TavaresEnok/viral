@@ -7,6 +7,16 @@ COPY apps/worker apps/worker
 COPY packages packages
 COPY scripts scripts
 RUN pnpm install --frozen-lockfile --ignore-scripts
+# --ignore-scripts acima é hardening deliberado (evita postinstall arbitrário
+# de qualquer dependência transitiva). youtube-dl-exec precisa do seu proprio
+# postinstall para baixar o binario real do yt-dlp — sem isso, download por
+# URL (YouTube/TikTok/Instagram/Kwai) falha com ENOENT em silencio.
+# `pnpm rebuild <pkg>` mostrou-se não confiável aqui (o postinstall upstream é
+# fire-and-forget, sem await no topo do script — corrida entre o fetch/pipe e
+# o pnpm encerrar o processo do script). Invocar o script diretamente com
+# `node` é determinístico: o processo só sai quando o script principal termina.
+RUN node node_modules/.pnpm/youtube-dl-exec@*/node_modules/youtube-dl-exec/scripts/postinstall.js && \
+    test -s node_modules/.pnpm/youtube-dl-exec@*/node_modules/youtube-dl-exec/bin/yt-dlp
 RUN pnpm --filter @viralforge/database exec prisma generate
 RUN pnpm --filter @viralforge/shared build
 RUN pnpm --filter @viralforge/database build

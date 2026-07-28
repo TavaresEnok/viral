@@ -57,7 +57,7 @@ export class WorkerRunner implements OnModuleDestroy {
         this.logger.log({
           msg: 'Processando job',
           jobId: job.id,
-          projectId: job.data.projectId,
+          projectId: 'projectId' in job.data ? job.data.projectId : undefined,
           userId: job.data.userId,
           jobType: (job.data as Record<string, unknown>).jobType ?? 'PROCESS_PROJECT',
         });

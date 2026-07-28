@@ -5,5 +5,11 @@ export type {
   Project,
   Transcript,
   User,
+  QuickCaptionBatch,
+  QuickCaptionItem,
+  QuickCaptionStatus,
+  ChannelImportRequest,
+  ChannelImportStatus,
+  SocialChannelPlatform,
 } from '@prisma/client';
 export * from './json-types.js';

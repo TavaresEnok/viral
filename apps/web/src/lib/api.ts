@@ -58,6 +58,56 @@ export class ApiError extends Error {
     }
 }
 
+export type QuickCaptionStatus = "DRAFT" | "PENDING" | "RENDERING" | "COMPLETED" | "FAILED";
+
+export interface QuickCaptionItem {
+    id: string;
+    batchId: string;
+    originalFilePath: string | null;
+    captionText: string;
+    durationSeconds: number | null;
+    status: QuickCaptionStatus;
+    videoPath: string | null;
+    thumbnailPath: string | null;
+    errorMessage: string | null;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface QuickCaptionBatch {
+    id: string;
+    userId: string;
+    name: string;
+    renderLayout: RenderLayout;
+    captionTheme: CaptionTheme;
+    createdAt: string;
+    updatedAt: string;
+    items?: QuickCaptionItem[];
+    _count?: { items: number };
+}
+
+export type SocialChannelPlatform = "TIKTOK" | "INSTAGRAM" | "KWAI";
+export type ChannelImportStatus = "PENDING" | "LISTING" | "READY" | "FAILED";
+
+export interface ChannelImportVideo {
+    url: string;
+    title: string;
+    thumbnailUrl?: string;
+    durationSeconds?: number;
+}
+
+export interface ChannelImportRequest {
+    id: string;
+    userId: string;
+    platform: SocialChannelPlatform;
+    channelUrl: string;
+    status: ChannelImportStatus;
+    errorMessage: string | null;
+    videosJson: ChannelImportVideo[] | null;
+    createdAt: string;
+    updatedAt: string;
+}
+
 export interface PublishedClip {
     id: string;
     status: string;
@@ -204,11 +254,11 @@ async function request<T>(
     return response.json() as Promise<T>;
 }
 
-export function uploadFile(
+export function uploadFile<T = Project>(
     path: string,
     file: File,
     onProgress: (progress: number) => void,
-): Promise<Project> {
+): Promise<T> {
     const token = getAuthToken();
     return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
@@ -223,7 +273,7 @@ export function uploadFile(
 
         xhr.addEventListener("load", () => {
             if (xhr.status >= 200 && xhr.status < 300) {
-                resolve(JSON.parse(xhr.responseText) as Project);
+                resolve(JSON.parse(xhr.responseText) as T);
             } else {
                 reject(new Error(xhr.responseText || "Falha no upload"));
             }
@@ -324,7 +374,7 @@ export const api = {
             id: string,
             file: File,
             onProgress: (progress: number) => void,
-        ) => uploadFile(`/projects/${id}/upload`, file, onProgress),
+        ) => uploadFile<Project>(`/projects/${id}/upload`, file, onProgress),
     },
     jobs: {
         status: (projectId: string) => request<JobStatus>(`/jobs/${projectId}`),
@@ -658,5 +708,57 @@ export const api = {
     },
     quality: {
         overview: () => request<QualityOverview>("/quality/overview"),
+    },
+    quickCaption: {
+        listBatches: () => request<QuickCaptionBatch[]>("/quick-caption/batches"),
+        createBatch: (data: { name?: string; renderLayout?: RenderLayout; captionTheme?: CaptionTheme }) =>
+            request<QuickCaptionBatch>("/quick-caption/batches", {
+                method: "POST",
+                body: JSON.stringify(data),
+            }),
+        getBatch: (id: string) => request<QuickCaptionBatch>(`/quick-caption/batches/${id}`),
+        updateBatch: (id: string, data: { name?: string; renderLayout?: RenderLayout; captionTheme?: CaptionTheme }) =>
+            request<QuickCaptionBatch>(`/quick-caption/batches/${id}`, {
+                method: "PATCH",
+                body: JSON.stringify(data),
+            }),
+        deleteBatch: (id: string) => request<{ success: true }>(`/quick-caption/batches/${id}`, { method: "DELETE" }),
+        renderBatch: (id: string) =>
+            request<{ queued: number }>(`/quick-caption/batches/${id}/render`, { method: "POST" }),
+        uploadItem: (batchId: string, file: File, onProgress: (progress: number) => void) =>
+            uploadFile<QuickCaptionItem>(`/quick-caption/batches/${batchId}/items`, file, onProgress),
+        updateItem: (itemId: string, captionText: string) =>
+            request<QuickCaptionItem>(`/quick-caption/items/${itemId}`, {
+                method: "PATCH",
+                body: JSON.stringify({ captionText }),
+            }),
+        deleteItem: (itemId: string) =>
+            request<{ success: true }>(`/quick-caption/items/${itemId}`, { method: "DELETE" }),
+        downloadUrl: (itemId: string) => `${BASE_URL}/quick-caption/items/${itemId}/download`,
+    },
+    channelImport: {
+        list: () => request<ChannelImportRequest[]>("/channel-import"),
+        create: (data: { platform: SocialChannelPlatform; channelUrl: string }) =>
+            request<ChannelImportRequest>("/channel-import", {
+                method: "POST",
+                body: JSON.stringify(data),
+            }),
+        get: (id: string) => request<ChannelImportRequest>(`/channel-import/${id}`),
+        importSelected: (
+            id: string,
+            data: {
+                selectedUrls: string[];
+                contentType: ContentType;
+                clipStyle: ClipStyle;
+                language?: string;
+                preferredClipDuration?: number;
+                renderLayout?: RenderLayout;
+                captionTheme?: CaptionTheme;
+            },
+        ) =>
+            request<{ imported: number; requested: number; projectIds: string[]; quotaExceeded: boolean }>(
+                `/channel-import/${id}/import`,
+                { method: "POST", body: JSON.stringify(data) },
+            ),
     },
 };

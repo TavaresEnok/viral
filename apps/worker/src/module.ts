@@ -23,6 +23,8 @@ import { SchedulerService } from './services/scheduler.service.js';
 import { OverlayBuilderService } from './services/overlay-builder.service.js';
 import { BrollService } from './services/broll.service.js';
 import { BrollPlanService } from './services/broll-plan.service.js';
+import { BulkCaptionRenderService } from './services/bulk-caption-render.service.js';
+import { ChannelImportService } from './services/channel-import.service.js';
 import { WorkerRunner } from './worker-runner.js';
 import { FaceDetectionService } from './services/face-detection.service.js';
 import { FeedbackProfileService } from './services/feedback-profile.service.js';
@@ -58,6 +60,8 @@ import { SmartCropService } from './services/smart-crop.service.js';
     SchedulerService,
     BrollService,
     BrollPlanService,
+    BulkCaptionRenderService,
+    ChannelImportService,
     OverlayBuilderService,
     WorkerRunner,
     FaceDetectionService,

@@ -48,6 +48,8 @@ function buildDeps(overrides: AnyRecord = {}) {
     render: { renderSingleClip: vi.fn().mockResolvedValue(undefined) },
     feedbackProfile: { buildFeedbackNotes: vi.fn().mockResolvedValue(undefined) },
     transcription: {},
+    bulkCaptionRender: { renderItem: vi.fn().mockResolvedValue(undefined) },
+    channelImport: { listAndSave: vi.fn().mockResolvedValue(undefined) },
     ...overrides,
   };
 
@@ -66,6 +68,8 @@ function buildDeps(overrides: AnyRecord = {}) {
     deps.render as never,
     deps.feedbackProfile as never,
     deps.transcription as never,
+    deps.bulkCaptionRender as never,
+    deps.channelImport as never,
   );
 
   return { service, deps };

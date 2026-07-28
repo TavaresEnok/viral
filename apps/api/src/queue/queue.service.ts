@@ -13,7 +13,7 @@ export class QueueService implements OnModuleDestroy {
     },
   });
 
-  async addVideoProcessingJob(payload: QueueJobPayload) {
+  async addVideoProcessingJob(payload: Extract<QueueJobPayload, { jobType?: 'PROCESS_PROJECT' }>) {
     const data = { ...payload, jobType: 'PROCESS_PROJECT' as const };
     return this.addUnique('process-video', data, {
       jobId: `project:${payload.projectId}:process`,
@@ -46,7 +46,41 @@ export class QueueService implements OnModuleDestroy {
     });
   }
 
-  private async addUnique(name: 'process-video' | 'render-clip' | 'publish-clip' | 'retranscribe-clip', payload: QueueJobPayload, options: { jobId: string; attempts: number; backoff: { type: 'exponential'; delay: number } }) {
+  async addRenderBulkItemJob(payload: Extract<QueueJobPayload, { jobType: 'RENDER_BULK_ITEM' }>) {
+    const jobId = `bulk-item:${payload.itemId}:render`;
+    const existing = await this.queue.getJob(jobId);
+    if (existing) {
+      const state = await existing.getState();
+      if (state === 'completed' || state === 'failed') {
+        await existing.remove();
+      } else {
+        return existing;
+      }
+    }
+    return this.queue.add('render-bulk-item', payload, {
+      jobId,
+      attempts: 2,
+      backoff: { type: 'exponential', delay: 3000 },
+      removeOnComplete: { count: 100 },
+      removeOnFail: { count: 500 },
+    });
+  }
+
+  async addListChannelVideosJob(payload: Extract<QueueJobPayload, { jobType: 'LIST_CHANNEL_VIDEOS' }>) {
+    return this.queue.add('list-channel-videos', payload, {
+      jobId: `channel-import:${payload.requestId}:list`,
+      attempts: 2,
+      backoff: { type: 'exponential', delay: 3000 },
+      removeOnComplete: { count: 100 },
+      removeOnFail: { count: 500 },
+    });
+  }
+
+  private async addUnique(
+    name: 'process-video' | 'render-clip' | 'publish-clip' | 'retranscribe-clip',
+    payload: Extract<QueueJobPayload, { projectId: string }>,
+    options: { jobId: string; attempts: number; backoff: { type: 'exponential'; delay: number } },
+  ) {
     const existing = await this.queue.getJob(options.jobId);
     if (existing) {
       const state = await existing.getState();

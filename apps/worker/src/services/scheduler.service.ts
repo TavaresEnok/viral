@@ -221,7 +221,7 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
     const queuedProjectIds = new Set<string>();
     for (const job of [...waitingJobs, ...activeJobs, ...delayedJobs]) {
       const data = job.data as QueueJobPayload | undefined;
-      if (!data?.projectId) continue;
+      if (!data || !('projectId' in data) || !data.projectId) continue;
       if (data.jobType && data.jobType !== 'PROCESS_PROJECT') continue;
       queuedProjectIds.add(data.projectId);
     }

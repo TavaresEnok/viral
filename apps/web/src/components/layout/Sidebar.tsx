@@ -13,6 +13,8 @@ import { Logo } from './Logo';
 
 export const navItems = [
   { href: '/dashboard', label: 'Cortes' },
+  { href: '/dashboard/quick-caption', label: 'Editor em massa' },
+  { href: '/dashboard/import-channel', label: 'Importar canal' },
   { href: '/dashboard/analytics', label: 'Desempenho' },
   { href: '/dashboard/connections', label: 'Redes' },
   { href: '/dashboard/published', label: 'Postagens' },

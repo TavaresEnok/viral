@@ -115,6 +115,8 @@ model User {
   apiKeys                  ApiKey[]
   emailTokens              EmailToken[]
   npsResponses             NPSResponse[]
+  quickCaptionBatches      QuickCaptionBatch[]
+  channelImportRequests    ChannelImportRequest[]
 
   @@index([createdAt])
   @@index([suspended])
@@ -537,12 +539,12 @@ model ApiKey {
 }
 
 model NPSResponse {
-  id        String    @id @default(cuid())
+  id        String   @id @default(cuid())
   userId    String
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  score     Int       @db.SmallInt // 0-10
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  score     Int      @db.SmallInt // 0-10
   feedback  String?
-  createdAt DateTime  @default(now())
+  createdAt DateTime @default(now())
 
   @@index([userId])
   @@index([score])
@@ -565,4 +567,80 @@ model PlatformAiConfig {
   transcriptionApiKeyEncrypted String?
   updatedAt                    DateTime @updatedAt
   createdAt                    DateTime @default(now())
+}
+
+enum QuickCaptionStatus {
+  DRAFT
+  PENDING
+  RENDERING
+  COMPLETED
+  FAILED
+}
+
+// Editor em massa: N vídeos independentes, cada um com legenda DIGITADA
+// manualmente (não passa por transcrição/IA), com layout/tema compartilhados
+// entre os itens do lote.
+model QuickCaptionBatch {
+  id           String             @id @default(cuid())
+  userId       String
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String             @default("Lote sem título")
+  renderLayout RenderLayout       @default(BLURRED_BACKGROUND)
+  captionTheme CaptionTheme       @default(CLEAN_FOOTER)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  items        QuickCaptionItem[]
+
+  @@index([userId])
+}
+
+model QuickCaptionItem {
+  id               String             @id @default(cuid())
+  batchId          String
+  batch            QuickCaptionBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  userId           String
+  originalFilePath String?
+  captionText      String             @default("")
+  durationSeconds  Float?
+  status           QuickCaptionStatus @default(DRAFT)
+  videoPath        String?
+  thumbnailPath    String?
+  errorMessage     String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  @@index([batchId])
+  @@index([userId])
+}
+
+enum SocialChannelPlatform {
+  TIKTOK
+  INSTAGRAM
+  KWAI
+}
+
+enum ChannelImportStatus {
+  PENDING
+  LISTING
+  READY
+  FAILED
+}
+
+// Importador de canal: lista os vídeos públicos de um perfil via URL (sem
+// OAuth) para o usuário escolher quais importar como Projects normais.
+model ChannelImportRequest {
+  id           String                @id @default(cuid())
+  userId       String
+  user         User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platform     SocialChannelPlatform
+  channelUrl   String
+  status       ChannelImportStatus   @default(PENDING)
+  errorMessage String?
+  // Array de {url, title, thumbnailUrl, durationSeconds}. Ver ChannelVideo em
+  // apps/worker/src/services/channel-import.service.ts.
+  videosJson   Json?
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  @@index([userId])
 }

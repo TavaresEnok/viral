@@ -68,6 +68,24 @@ export type QueueJobPayload =
       clipId: string;
       socialAccountId: string;
       platform: string;
+    }
+  | {
+      /**
+       * Renderiza UM item do editor em massa: legenda digitada manualmente,
+       * sem transcrição/IA. Não tem projectId — não pertence a nenhum Project.
+       */
+      jobType: 'RENDER_BULK_ITEM';
+      userId: string;
+      itemId: string;
+    }
+  | {
+      /**
+       * Lista os vídeos públicos de um canal/perfil (TikTok/Instagram/Kwai)
+       * sem baixar nada ainda. Resultado salvo em ChannelImportRequest.videosJson.
+       */
+      jobType: 'LIST_CHANNEL_VIDEOS';
+      userId: string;
+      requestId: string;
     };
 
 export interface ApiUser {
@@ -114,14 +132,31 @@ export function validateJobPayload(
 
   const obj = payload as Record<string, unknown>;
 
-  if (typeof obj.projectId !== 'string' || !obj.projectId) {
-    return { valid: false, error: 'projectId é obrigatório' };
-  }
   if (typeof obj.userId !== 'string' || !obj.userId) {
     return { valid: false, error: 'userId é obrigatório' };
   }
 
   const jobType = obj.jobType;
+
+  // Estes dois tipos não pertencem a nenhum Project (editor em massa e
+  // listagem de canal), então não exigem projectId como os demais.
+  if (jobType === 'RENDER_BULK_ITEM') {
+    if (typeof obj.itemId !== 'string' || !obj.itemId) {
+      return { valid: false, error: 'itemId é obrigatório para RENDER_BULK_ITEM' };
+    }
+    return { valid: true, data: payload as QueueJobPayload };
+  }
+
+  if (jobType === 'LIST_CHANNEL_VIDEOS') {
+    if (typeof obj.requestId !== 'string' || !obj.requestId) {
+      return { valid: false, error: 'requestId é obrigatório para LIST_CHANNEL_VIDEOS' };
+    }
+    return { valid: true, data: payload as QueueJobPayload };
+  }
+
+  if (typeof obj.projectId !== 'string' || !obj.projectId) {
+    return { valid: false, error: 'projectId é obrigatório' };
+  }
 
   if (jobType === 'RENDER_CLIP') {
     if (typeof obj.clipId !== 'string' || !obj.clipId) {
