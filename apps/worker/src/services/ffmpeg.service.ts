@@ -1,10 +1,11 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import type { RenderLayout } from "@prisma/client";
 import { execFile } from "node:child_process";
 import { cpus } from "node:os";
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { promisify } from "node:util";
+import { GpuCapabilityService } from "./gpu-capability.service.js";
 import type { FaceTrackPoint, SmoothedCrop } from "./smart-crop.service.js";
 
 const execFileAsync = promisify(execFile);
@@ -30,11 +31,14 @@ export type { FaceTrackPoint };
 
 @Injectable()
 export class FfmpegService {
+    private readonly logger = new Logger(FfmpegService.name);
     private readonly threads = positiveInt(
         process.env.FFMPEG_THREADS,
         Math.max(1, Math.floor(cpus().length / 4)),
     );
     private readonly preset = process.env.FFMPEG_PRESET ?? "veryfast";
+
+    constructor(private readonly gpu: GpuCapabilityService) {}
 
     async ensureDir(path: string) {
         await mkdir(dirname(path), { recursive: true });
@@ -210,7 +214,7 @@ export class FfmpegService {
             filter = `${baseFilter}${brollChain};[${videoLabel}]subtitles='${escapedSubtitlePath}'[vtmp];[vtmp]drawtext=text='${escapedText}':fontcolor=white@0.6:fontsize=36:x=(w-text_w)/2:y=h-th-80:box=1:boxcolor=black@0.4:boxborderw=10[v]`;
         }
 
-        await this.execFfmpeg([
+        const buildArgs = (codecArgs: string[]) => [
             "-y",
             "-threads",
             String(this.threads),
@@ -229,14 +233,7 @@ export class FfmpegService {
             "0:a?",
             "-af",
             "loudnorm=I=-16:TP=-1.5:LRA=11",
-            "-c:v",
-            "libx264",
-            "-preset",
-            this.preset,
-            "-threads",
-            String(this.threads),
-            "-crf",
-            "23",
+            ...codecArgs,
             "-c:a",
             "aac",
             "-b:a",
@@ -244,7 +241,28 @@ export class FfmpegService {
             "-pix_fmt",
             "yuv420p",
             outputPath,
-        ]);
+        ];
+
+        const useGpu = await this.gpu.isNvencAvailable();
+
+        try {
+            await this.execFfmpeg(
+                buildArgs(this.gpu.videoCodecArgs(useGpu, this.preset, this.threads)),
+            );
+        } catch (error) {
+            // A GPU pode existir no boot e falhar depois (driver caiu, VRAM
+            // cheia, outro processo tomou o encoder). Refaz o corte em CPU em
+            // vez de derrubar o render — sem isso um soluço da placa quebraria
+            // todos os cortes do projeto.
+            if (!useGpu) throw error;
+            this.logger.warn({
+                msg: "Encode por GPU falhou; refazendo este corte em CPU (libx264)",
+                error: error instanceof Error ? error.message : String(error),
+            });
+            await this.execFfmpeg(
+                buildArgs(this.gpu.videoCodecArgs(false, this.preset, this.threads)),
+            );
+        }
     }
 
     private videoLayoutFilter(

@@ -1,60 +1,27 @@
+# ==========================================================================
+# Override OPCIONAL que entrega a GPU ao worker (encode NVENC + IA).
+#
+# NÃO use este arquivo sozinho: ele é aplicado POR CIMA do compose de deploy,
+# e apenas quando há GPU utilizável. Quem decide isso é o
+# infra/scripts/viralforge-up.sh, que detecta a placa antes de subir.
+#
+#   # com GPU (o script faz isso sozinho):
+#   docker compose -p viralforge --env-file infra/.env.deploy \
+#     -f infra/docker-compose.deploy.yml -f infra/docker-compose.gpu.yml up -d
+#
+# Aplicar este override numa máquina SEM placa faz o container falhar ao subir
+# — por isso a detecção fica no script, e não aqui.
+# ==========================================================================
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: modulo-ia-postgres
+  worker:
     environment:
-      POSTGRES_USER: viralforge
-      POSTGRES_PASSWORD: viralforge
-      POSTGRES_DB: viralforge
-    ports:
-      - '127.0.0.1:5432:5432'
-    volumes:
-      - modulo_ia_postgres_data:/var/lib/postgresql/data
-    restart: unless-stopped
-    healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U viralforge -d viralforge']
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
-  redis:
-    image: redis:7-alpine
-    container_name: modulo-ia-redis
-    ports:
-      - '127.0.0.1:6379:6379'
-    volumes:
-      - modulo_ia_redis_data:/data
-    command: redis-server --save 60 1 --loglevel warning
-    restart: unless-stopped
-    healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  minio:
-    image: minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
-    container_name: modulo-ia-minio
-    command: server /data --console-address ':9001'
-    environment:
-      MINIO_ROOT_USER: viralforge
-      MINIO_ROOT_PASSWORD: viralforge123
-    ports:
-      - '127.0.0.1:9000:9000'
-      - '127.0.0.1:9001:9001'
-    volumes:
-      - modulo_ia_minio_data:/data
-    restart: unless-stopped
-    healthcheck:
-      test: ['CMD', 'mc', 'ready', 'local']
-      interval: 10s
-      timeout: 5s
-      retries: 10
-
-volumes:
-  modulo_ia_postgres_data:
-    external: true
-  modulo_ia_redis_data:
-    external: true
-  modulo_ia_minio_data:
-    external: true
+      # `video` é obrigatório para o NVENC funcionar — só `compute` não basta.
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,video,utility
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, video]

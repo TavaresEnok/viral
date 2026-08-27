@@ -6,6 +6,7 @@ import { ApiKeyService } from './services/api-key.service.js';
 import { ClipValidationService } from './services/clip-validation.service.js';
 import { ClipPersistenceService } from './services/clip-persistence.service.js';
 import { FfmpegService } from './services/ffmpeg.service.js';
+import { GpuCapabilityService } from './services/gpu-capability.service.js';
 import { PipelineMetricsService } from './services/pipeline-metrics.service.js';
 import { RemoteRenderingService } from './services/remote-rendering.service.js';
 import { RenderingService } from './services/rendering.service.js';
@@ -44,6 +45,7 @@ import { SmartCropService } from './services/smart-crop.service.js';
     ClipValidationService,
     ClipPersistenceService,
     FfmpegService,
+    GpuCapabilityService,
     PipelineMetricsService,
     RemoteRenderingService,
     RenderingService,

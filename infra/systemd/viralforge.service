@@ -1,0 +1,38 @@
+# Sobe o ViralForge no boot, detectando a GPU automaticamente.
+#
+# Resolve dois problemas:
+#   1. Aceleração: com placa presente, o worker sobe com NVENC; sem placa,
+#      sobe em CPU sem intervenção manual.
+#   2. Disponibilidade: `restart: unless-stopped` do Docker NÃO religa os
+#      containers depois de um SIGTERM "limpo" (reboot, restart do daemon) —
+#      foi assim que o sistema ficou dias fora do ar sem ninguém perceber.
+#      Esta unit garante a subida no boot.
+#
+# Instalar (precisa de root):
+#   sudo cp infra/systemd/viralforge.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now viralforge.service
+#
+# Operar:
+#   systemctl status viralforge
+#   sudo systemctl restart viralforge     # re-detecta a GPU
+#   journalctl -u viralforge -n 50
+
+[Unit]
+Description=ViralForge (Docker Compose, GPU auto-detect)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=flashnet
+WorkingDirectory=/home/flashnet/ClipAI/viral
+ExecStart=/home/flashnet/ClipAI/viral/infra/scripts/viralforge-up.sh
+ExecStop=/usr/bin/docker compose -p viralforge -f infra/docker-compose.deploy.yml stop
+# O primeiro boot pode precisar puxar imagem/subir Postgres; não corra.
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target
