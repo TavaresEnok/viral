@@ -1,9 +1,10 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { ImageOff } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
@@ -70,6 +71,20 @@ export default function ImportChannelPage() {
     },
   });
 
+  const invalidate = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: ['channel-import', activeRequestId] }),
+    [queryClient, activeRequestId],
+  );
+
+  const loadMore = useMutation({
+    mutationFn: () => api.channelImport.loadMore(activeRequestId!),
+    onSuccess: invalidate,
+    onError: (error: unknown) => {
+      const message = error instanceof Error ? error.message : 'Não foi possível carregar mais vídeos.';
+      toast.error(message);
+    },
+  });
+
   const createRequest = useMutation({
     mutationFn: () => api.channelImport.create({ platform, channelUrl: channelUrl.trim() }),
     onSuccess: (created) => {
@@ -118,6 +133,12 @@ export default function ImportChannelPage() {
     });
   }
 
+  const allSelected = videos.length > 0 && videos.every((video) => selectedUrls.has(video.url));
+
+  function toggleAll() {
+    setSelectedUrls(allSelected ? new Set() : new Set(videos.map((video) => video.url)));
+  }
+
   return (
     <div className="mx-auto max-w-4xl px-6 py-10">
       <h1 className="text-2xl font-bold text-ink-primary">Importar canal</h1>
@@ -162,7 +183,22 @@ export default function ImportChannelPage() {
 
           {request.status === 'READY' && (
             <>
-              <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {videos.length > 0 && (
+                <div className="mt-4 flex items-center justify-between">
+                  <label className="flex cursor-pointer items-center gap-2 text-sm text-ink-secondary">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-accent"
+                      checked={allSelected}
+                      onChange={toggleAll}
+                    />
+                    {allSelected ? 'Desmarcar todos' : 'Selecionar todos'}
+                  </label>
+                  <p className="text-xs text-ink-tertiary">{videos.length} vídeo(s) listados</p>
+                </div>
+              )}
+
+              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {videos.map((video) => {
                   const checked = selectedUrls.has(video.url);
                   return (
@@ -178,6 +214,24 @@ export default function ImportChannelPage() {
                         checked={checked}
                         onChange={() => toggle(video.url)}
                       />
+                      <span className="h-16 w-12 shrink-0 overflow-hidden rounded-input bg-elevated">
+                        {video.thumbnailUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element -- thumbnails vêm de domínios externos variados (TikTok/Instagram/Kwai)
+                          <img
+                            src={video.thumbnailUrl}
+                            alt=""
+                            className="h-full w-full object-cover"
+                            loading="lazy"
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          <span className="flex h-full w-full items-center justify-center text-ink-tertiary">
+                            <ImageOff className="h-4 w-4" strokeWidth={1.6} />
+                          </span>
+                        )}
+                      </span>
                       <span className="min-w-0">
                         <span className="block truncate text-sm font-medium text-ink-primary">{video.title}</span>
                         {video.durationSeconds ? (
@@ -191,6 +245,14 @@ export default function ImportChannelPage() {
 
               {videos.length === 0 && (
                 <p className="mt-4 text-sm text-ink-tertiary">Nenhum vídeo público encontrado nesse canal.</p>
+              )}
+
+              {request.hasMore && (
+                <div className="mt-4 flex justify-center">
+                  <Button variant="secondary" size="sm" loading={loadMore.isPending} onClick={() => loadMore.mutate()}>
+                    Ver mais vídeos
+                  </Button>
+                </div>
               )}
 
               {videos.length > 0 && (

@@ -23,13 +23,13 @@ function positiveEnvInt(name: string, fallback: number): number {
 }
 
 /**
- * Teto de vídeos por importação de canal — evita que um canal com milhares de
- * vídeos estoure disco/tempo numa única listagem. O usuário vê esta lista e
- * escolhe quais importar; canais maiores exigem rodar a listagem de novo com
- * paginação (não implementada nesta primeira versão).
+ * Vídeos por página de listagem — evita que um canal com milhares de vídeos
+ * estoure disco/tempo numa única chamada. O usuário vê esta página e pode
+ * pedir "ver mais" para buscar a próxima (listAndSave usa o total já salvo
+ * como offset via playlistStart do yt-dlp).
  */
-function maxChannelVideos(): number {
-    return positiveEnvInt("CHANNEL_IMPORT_MAX_VIDEOS", 50);
+function channelVideosPageSize(): number {
+    return positiveEnvInt("CHANNEL_IMPORT_PAGE_SIZE", 50);
 }
 
 function channelListTimeoutMs(): number {
@@ -48,6 +48,23 @@ function readString(record: Record<string, unknown>, key: string): string | unde
 function readNumber(record: Record<string, unknown>, key: string): number | undefined {
     const value = record[key];
     return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+/**
+ * TikTok (e outros extractors) não preenchem o campo singular `thumbnail` no
+ * modo flat-playlist — a miniatura real vem em `thumbnails: [{id, url}]`.
+ * Prefere o item com id "cover" (capa gerada pela plataforma); sem isso, usa
+ * o primeiro item da lista.
+ */
+function readThumbnailUrl(entry: Record<string, unknown>): string | undefined {
+    const direct = readString(entry, "thumbnail");
+    if (direct) return direct;
+
+    const list = entry.thumbnails;
+    if (!Array.isArray(list)) return undefined;
+    const records = list.filter(isRecord);
+    const cover = records.find((item) => readString(item, "id") === "cover");
+    return readString(cover ?? records[0] ?? {}, "url");
 }
 
 /**
@@ -82,28 +99,43 @@ export class ChannelImportService {
             return;
         }
 
+        // "Ver mais" reusa o mesmo request: o que já está salvo vira o offset
+        // (playlistStart) da próxima página, e os resultados são acumulados.
+        const existing = (request.videosJson as unknown as ChannelVideo[] | null) ?? [];
+
         await this.prisma.channelImportRequest.update({
             where: { id: requestId },
             data: { status: "LISTING", errorMessage: null },
         });
 
         try {
-            log("Listando vídeos do canal", { platform: request.platform, channelUrl: request.channelUrl });
-            const videos = await this.listChannel(request.platform, request.channelUrl);
+            log("Listando vídeos do canal", {
+                platform: request.platform,
+                channelUrl: request.channelUrl,
+                offset: existing.length,
+            });
+            const page = await this.listChannel(request.platform, request.channelUrl, existing.length);
 
-            if (!videos.length) {
+            if (!existing.length && !page.length) {
                 throw new Error("Nenhum vídeo público encontrado nesse canal/perfil.");
             }
+
+            const seen = new Set(existing.map((v) => v.url));
+            const merged = [...existing, ...page.filter((v) => !seen.has(v.url))];
+            // Página cheia => provavelmente há mais. Página incompleta ou vazia
+            // (fim do canal, ou tudo já era duplicata) => não há mais.
+            const hasMore = page.length >= channelVideosPageSize();
 
             await this.prisma.channelImportRequest.update({
                 where: { id: requestId },
                 data: {
                     status: "READY",
-                    videosJson: videos as unknown as Prisma.InputJsonValue,
+                    videosJson: merged as unknown as Prisma.InputJsonValue,
+                    hasMore,
                     errorMessage: null,
                 },
             });
-            log(`Listagem concluída: ${videos.length} vídeo(s) encontrados`);
+            log(`Listagem concluída: +${page.length} vídeo(s) (total ${merged.length}), hasMore=${hasMore}`);
         } catch (error) {
             const message = describeError(error);
             await this.prisma.channelImportRequest.update({
@@ -115,10 +147,17 @@ export class ChannelImportService {
         }
     }
 
-    private async listChannel(platform: SocialChannelPlatform, channelUrl: string): Promise<ChannelVideo[]> {
+    private async listChannel(
+        platform: SocialChannelPlatform,
+        channelUrl: string,
+        offset: number,
+    ): Promise<ChannelVideo[]> {
         await assertPublicHttpUrl(channelUrl, PLATFORM_HOSTS[platform]);
 
-        const limit = maxChannelVideos();
+        const pageSize = channelVideosPageSize();
+        // playlistStart é 1-indexado no yt-dlp; offset=0 (primeira página) -> 1.
+        const playlistStart = offset + 1;
+        const playlistEnd = offset + pageSize;
         // flatPlaylist evita baixar metadata completa de cada vídeo (rápido);
         // dumpSingleJson faz o yt-dlp emitir um único JSON no stdout, que a lib
         // parseia automaticamente quando reconhece essas flags.
@@ -128,7 +167,8 @@ export class ChannelImportService {
                 dumpSingleJson: true,
                 flatPlaylist: true,
                 noWarnings: true,
-                playlistEnd: limit,
+                playlistStart,
+                playlistEnd,
             } as Parameters<typeof youtubeDl>[1],
             { timeout: channelListTimeoutMs() },
         );
@@ -150,10 +190,10 @@ export class ChannelImportService {
             videos.push({
                 url,
                 title: readString(entry, "title") ?? "Sem título",
-                thumbnailUrl: readString(entry, "thumbnail"),
+                thumbnailUrl: readThumbnailUrl(entry),
                 durationSeconds: readNumber(entry, "duration"),
             });
-            if (videos.length >= limit) break;
+            if (videos.length >= pageSize) break;
         }
 
         return videos;

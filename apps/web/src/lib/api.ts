@@ -104,6 +104,7 @@ export interface ChannelImportRequest {
     status: ChannelImportStatus;
     errorMessage: string | null;
     videosJson: ChannelImportVideo[] | null;
+    hasMore: boolean;
     createdAt: string;
     updatedAt: string;
 }
@@ -744,6 +745,7 @@ export const api = {
                 body: JSON.stringify(data),
             }),
         get: (id: string) => request<ChannelImportRequest>(`/channel-import/${id}`),
+        loadMore: (id: string) => request<{ queued: true }>(`/channel-import/${id}/more`, { method: "POST" }),
         importSelected: (
             id: string,
             data: {

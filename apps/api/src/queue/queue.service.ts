@@ -67,8 +67,21 @@ export class QueueService implements OnModuleDestroy {
   }
 
   async addListChannelVideosJob(payload: Extract<QueueJobPayload, { jobType: 'LIST_CHANNEL_VIDEOS' }>) {
+    // "Ver mais" reenfileira o MESMO requestId — precisa remover o job
+    // anterior (que já terminou completed/failed) antes de adicionar de novo,
+    // senão o BullMQ ignora silenciosamente por causa do jobId duplicado.
+    const jobId = `channel-import:${payload.requestId}:list`;
+    const existing = await this.queue.getJob(jobId);
+    if (existing) {
+      const state = await existing.getState();
+      if (state === 'completed' || state === 'failed') {
+        await existing.remove();
+      } else {
+        return existing;
+      }
+    }
     return this.queue.add('list-channel-videos', payload, {
-      jobId: `channel-import:${payload.requestId}:list`,
+      jobId,
       attempts: 2,
       backoff: { type: 'exponential', delay: 3000 },
       removeOnComplete: { count: 100 },

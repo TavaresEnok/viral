@@ -27,6 +27,11 @@ export class ChannelImportController {
     return this.service.getRequest(user.id, id);
   }
 
+  @Post(':id/more')
+  loadMore(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.service.loadMore(user.id, id);
+  }
+
   @Post(':id/import')
   importSelected(
     @CurrentUser() user: RequestUser,

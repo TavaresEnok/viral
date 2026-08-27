@@ -52,6 +52,24 @@ export class ChannelImportService {
   }
 
   /**
+   * Busca a próxima página de vídeos do mesmo canal, acrescentando ao que já
+   * foi listado. O worker usa o total já salvo como offset.
+   */
+  async loadMore(userId: string, id: string) {
+    const request = await this.getRequest(userId, id);
+    if (request.status !== 'READY' || !request.hasMore) {
+      throw new ForbiddenException('Não há mais vídeos para carregar desta listagem');
+    }
+
+    await this.prisma.channelImportRequest.update({
+      where: { id },
+      data: { status: 'LISTING' },
+    });
+    await this.queue.addListChannelVideosJob({ jobType: 'LIST_CHANNEL_VIDEOS', userId, requestId: id });
+    return { queued: true };
+  }
+
+  /**
    * Cria um Project normal (mesmo caminho de "colar URL do YouTube") para cada
    * vídeo selecionado da listagem, e enfileira o processamento padrão. Para na
    * primeira vez que a quota de projetos esgotar, retornando o que já foi

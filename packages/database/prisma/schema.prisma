@@ -639,6 +639,9 @@ model ChannelImportRequest {
   // Array de {url, title, thumbnailUrl, durationSeconds}. Ver ChannelVideo em
   // apps/worker/src/services/channel-import.service.ts.
   videosJson   Json?
+  // true quando a última página buscada veio cheia — sinal de que
+  // provavelmente há mais vídeos além dos já listados ("Ver mais").
+  hasMore      Boolean               @default(false)
   createdAt    DateTime              @default(now())
   updatedAt    DateTime              @updatedAt
 
