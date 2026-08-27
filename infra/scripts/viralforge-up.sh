@@ -35,9 +35,21 @@ gpu_usable() {
 
   command -v nvidia-smi >/dev/null 2>&1 || { log "nvidia-smi ausente: sem GPU."; return 1; }
   nvidia-smi -L >/dev/null 2>&1 || { log "nvidia-smi não respondeu (placa removida ou driver quebrado): sem GPU."; return 1; }
-  docker info 2>/dev/null | grep -qi 'runtimes:.*nvidia' || { log "runtime nvidia não registrado no Docker: sem GPU."; return 1; }
 
-  return 0
+  # `docker info` pode devolver saída incompleta enquanto o daemon está
+  # ocupado (reload, recriação de containers). Uma leitura isolada já causou
+  # queda indevida para CPU num servidor COM placa — por isso, tenta de novo
+  # antes de concluir que o runtime não existe.
+  local attempt
+  for attempt in 1 2 3; do
+    if docker info 2>/dev/null | grep -qi 'runtimes:.*nvidia'; then
+      return 0
+    fi
+    [ "$attempt" -lt 3 ] && sleep 2
+  done
+
+  log "runtime nvidia não registrado no Docker após 3 tentativas: sem GPU."
+  return 1
 }
 
 compose_up() {

@@ -1,5 +1,7 @@
 # ==========================================================================
-# Override OPCIONAL que entrega a GPU ao worker (encode NVENC + IA).
+# Override OPCIONAL que liga a aceleração por GPU:
+#   - worker: encode NVENC
+#   - node-agent: transcrição Whisper na placa (serviço que só existe aqui)
 #
 # NÃO use este arquivo sozinho: ele é aplicado POR CIMA do compose de deploy,
 # e apenas quando há GPU utilizável. Quem decide isso é o
@@ -11,6 +13,10 @@
 #
 # Aplicar este override numa máquina SEM placa faz o container falhar ao subir
 # — por isso a detecção fica no script, e não aqui.
+#
+# Sem GPU, o node-agent simplesmente não sobe e o worker nem tenta usá-lo
+# (REMOTE_ACCEL_ENABLED só é definido aqui): a transcrição segue pelo caminho
+# local/API de sempre.
 # ==========================================================================
 services:
   worker:
@@ -18,6 +24,16 @@ services:
       # `video` é obrigatório para o NVENC funcionar — só `compute` não basta.
       NVIDIA_VISIBLE_DEVICES: all
       NVIDIA_DRIVER_CAPABILITIES: compute,video,utility
+      # Transcrição na GPU via node-agent (mesma rede interna do compose).
+      REMOTE_ACCEL_ENABLED: "true"
+      REMOTE_ACCEL_BASE_URL: http://node-agent:9873
+      REMOTE_ACCEL_TOKEN: ${NODE_KEY:?NODE_KEY é obrigatório para o node-agent}
+      REMOTE_ACCEL_MODEL: ${REMOTE_ACCEL_MODEL:-turbo}
+      REMOTE_ACCEL_DEVICE: cuda
+      REMOTE_ACCEL_COMPUTE_TYPE: ${REMOTE_ACCEL_COMPUTE_TYPE:-float16}
+    depends_on:
+      node-agent:
+        condition: service_healthy
     deploy:
       resources:
         reservations:
@@ -25,3 +41,45 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu, video]
+
+  node-agent:
+    build:
+      context: ..
+      dockerfile: node_agent/Dockerfile
+    container_name: viralforge-node-agent
+    # Sem porta publicada: só o worker fala com ele, pela rede interna.
+    cpus: 2.0
+    mem_limit: 4096m
+    environment:
+      NODE_KEY: ${NODE_KEY:?}
+      NODE_MODEL: ${REMOTE_ACCEL_MODEL:-turbo}
+      NODE_DEVICE: cuda
+      NODE_COMPUTE_TYPE: ${REMOTE_ACCEL_COMPUTE_TYPE:-float16}
+      # Baixar o modelo no boot atrasaria a subida em vários minutos; deixa
+      # para o primeiro uso, que fica em cache no volume.
+      NODE_PREWARM: "false"
+      # Detecção facial fica com o worker (face-engine em C++), não aqui —
+      # ligar isso exigiria torch/insightface, ~3GB à toa nesta imagem.
+      NODE_FACE_TRACKING_ENABLED: "false"
+      NODE_FACE_PREWARM: "false"
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    volumes:
+      - node-agent-models:/models
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  node-agent-models:
+    name: viralforge_node_agent_models
