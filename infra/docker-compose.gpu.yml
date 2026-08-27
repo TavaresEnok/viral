@@ -31,6 +31,12 @@ services:
       REMOTE_ACCEL_MODEL: ${REMOTE_ACCEL_MODEL:-turbo}
       REMOTE_ACCEL_DEVICE: cuda
       REMOTE_ACCEL_COMPUTE_TYPE: ${REMOTE_ACCEL_COMPUTE_TYPE:-float16}
+      # Transcrição em lote: na GPU, processar vários trechos por vez é
+      # muito mais rápido que um a um. Em CPU isso não ajudaria.
+      REMOTE_ACCEL_BATCH_SIZE: ${REMOTE_ACCEL_BATCH_SIZE:-8}
+      # Com o encode saindo da CPU para o NVENC, dá para renderizar mais
+      # cortes em paralelo sem competir com o DRAC pela CPU.
+      RENDER_CLIP_CONCURRENCY: ${RENDER_CLIP_CONCURRENCY_GPU:-4}
     depends_on:
       node-agent:
         condition: service_healthy
@@ -55,9 +61,16 @@ services:
       NODE_MODEL: ${REMOTE_ACCEL_MODEL:-turbo}
       NODE_DEVICE: cuda
       NODE_COMPUTE_TYPE: ${REMOTE_ACCEL_COMPUTE_TYPE:-float16}
-      # Baixar o modelo no boot atrasaria a subida em vários minutos; deixa
-      # para o primeiro uso, que fica em cache no volume.
-      NODE_PREWARM: "false"
+      # Carrega o modelo na VRAM já no boot, para o primeiro vídeo do dia não
+      # pagar o custo de carregamento. O download em si acontece uma única vez
+      # e fica no volume, então o boot continua rápido.
+      NODE_PREWARM: ${NODE_PREWARM:-true}
+      # O padrão do app é descarregar o Whisper da VRAM após cada job — e nesse
+      # modo ele IGNORA o prewarm (não faz sentido carregar no boot para o
+      # primeiro job descarregar). Mantendo residente, todo vídeo entra direto
+      # na transcrição. Custa ~2GB dos 16GB de VRAM.
+      NODE_UNLOAD_ASR_AFTER_USE: ${NODE_UNLOAD_ASR_AFTER_USE:-false}
+      NODE_MAX_CONCURRENT: ${NODE_MAX_CONCURRENT:-2}
       # Detecção facial fica com o worker (face-engine em C++), não aqui —
       # ligar isso exigiria torch/insightface, ~3GB à toa nesta imagem.
       NODE_FACE_TRACKING_ENABLED: "false"
