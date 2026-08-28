@@ -248,6 +248,18 @@ export class ProjectsService {
 
     async retry(userId: string, projectId: string) {
         const project = await this.ensureOwner(userId, projectId);
+        // Sem essa checagem, um clique de retry enquanto o projeto ainda
+        // está PENDING/PROCESSING apaga os Clip que o job em andamento está
+        // atualizando nesse exato momento — o worker então falha com "Record
+        // to update not found" ao tentar salvar o resultado do render/legenda
+        // num registro que acabou de sumir. O frontend só mostra o botão de
+        // retry quando status é FAILED; aqui é a mesma regra, para cobrir
+        // chamada direta à API, duplo clique ou aba desatualizada.
+        if (project.status !== ProjectStatus.FAILED) {
+            throw new ForbiddenException(
+                "Só é possível reprocessar um projeto que falhou. Aguarde o processamento atual terminar.",
+            );
+        }
         if (!project.originalFilePath && !project.sourceUrl) {
             throw new BadRequestException(
                 "Projeto não tem vídeo ou URL para reprocessar",

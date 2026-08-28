@@ -8,6 +8,21 @@ const execFileAsync = promisify(execFile);
 const PROBE_TIMEOUT_MS = 15_000;
 
 /**
+ * Intervalo mínimo entre novas tentativas depois de uma falha.
+ *
+ * Um container de vida longa pode perder e recuperar o handle da GPU sem
+ * nenhuma mudança de configuração (visto em produção: 19h rodando, GPU
+ * presente e sã, mas `cuInit` devolvendo CUDA_ERROR_NO_DEVICE só para este
+ * processo — resolvido recriando o container). Cachear a falha PARA SEMPRE
+ * prendia o worker em CPU até o próximo restart manual, mesmo quando a GPU
+ * voltava a responder sozinha minutos depois.
+ */
+function retryCooldownMs(): number {
+    const parsed = Number(process.env.GPU_PROBE_RETRY_COOLDOWN_MS);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 5 * 60_000;
+}
+
+/**
  * `auto` (padrão) detecta em runtime. `cpu` força libx264 mesmo com GPU
  * presente. `gpu` NÃO é oferecido de propósito: forçar a GPU quebraria o
  * requisito de "tirar a placa e o sistema subir mesmo assim".
@@ -23,20 +38,43 @@ function encoderMode(): "auto" | "cpu" {
  * binário do Debian lista o encoder mesmo em máquina sem placa nenhuma. Só um
  * encode de teste de verdade prova que driver + placa + container estão ok.
  *
- * O resultado é cacheado por processo. Se a placa for removida, o worker sobe
- * igual e cai para CPU sozinho — e se a GPU falhar no meio de um render, o
- * FfmpegService ainda refaz aquele render em CPU.
+ * Sucesso é cacheado para sempre (mudar de GPU pra CPU em runtime, com o
+ * container no ar, é raro). Falha é cacheada só até um cooldown expirar —
+ * uma sonda que falhou uma vez tenta de novo mais tarde sozinha, em vez de
+ * prender o processo em CPU até o próximo restart manual.
+ *
+ * Se a placa for removida de vez, o worker sobe igual e cai para CPU. Se a
+ * GPU falhar no meio de um render, o FfmpegService ainda refaz aquele render
+ * em CPU.
  */
 @Injectable()
 export class GpuCapabilityService {
     private readonly logger = new Logger(GpuCapabilityService.name);
-    private probe?: Promise<boolean>;
+    /** Sonda em andamento — evita duas sondas simultâneas concorrendo. */
+    private inFlight?: Promise<boolean>;
+    /** Último resultado CONHECIDO e o instante em que foi obtido. */
+    private lastResult?: { available: boolean; at: number };
 
-    /** true quando o encode por GPU foi verificado e funciona. */
+    /**
+     * true quando o encode por GPU foi verificado e funciona.
+     *
+     * Sucesso é cacheado para sempre (GPU raramente some com o container no
+     * ar, e se sumir no meio de um render, o FfmpegService já refaz aquele
+     * render em CPU). Falha é cacheada só até o cooldown expirar, para um
+     * problema transitório se curar sozinho sem exigir restart manual.
+     */
     async isNvencAvailable(): Promise<boolean> {
         if (encoderMode() === "cpu") return false;
-        this.probe ??= this.runProbe();
-        return this.probe;
+
+        if (this.lastResult) {
+            const stillFresh = this.lastResult.available || Date.now() - this.lastResult.at < retryCooldownMs();
+            if (stillFresh) return this.lastResult.available;
+        }
+
+        this.inFlight ??= this.runProbe().finally(() => {
+            this.inFlight = undefined;
+        });
+        return this.inFlight;
     }
 
     private async runProbe(): Promise<boolean> {
@@ -61,15 +99,17 @@ export class GpuCapabilityService {
                 msg: "GPU detectada: encode por NVENC habilitado (h264_nvenc)",
                 encoder: "h264_nvenc",
             });
+            this.lastResult = { available: true, at: Date.now() };
             return true;
         } catch (error) {
             const detail = error instanceof Error ? error.message : String(error);
             this.logger.log({
-                msg: "GPU indisponível; encode seguirá em CPU (libx264)",
+                msg: `GPU indisponível; encode seguirá em CPU (libx264) — nova tentativa em até ${Math.round(retryCooldownMs() / 1000)}s`,
                 encoder: "libx264",
                 // Sem placa isso é esperado, não é erro — fica em log normal.
                 detail: detail.split("\n").filter(Boolean).slice(-1)[0] ?? detail,
             });
+            this.lastResult = { available: false, at: Date.now() };
             return false;
         }
     }

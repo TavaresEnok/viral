@@ -80,6 +80,70 @@ describe('GpuCapabilityService', () => {
     });
   });
 
+  describe('nova tentativa após falha (regressão: container de 19h com GPU sã, mas sonda cacheou "sem GPU" para sempre)', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+      delete process.env.GPU_PROBE_RETRY_COOLDOWN_MS;
+    });
+
+    it('não sonda de novo antes do cooldown expirar (evita martelar um ffmpeg que já falhou)', async () => {
+      process.env.GPU_PROBE_RETRY_COOLDOWN_MS = '60000';
+      failEncode();
+      const service = await newService();
+
+      await expect(service.isNvencAvailable()).resolves.toBe(false);
+      vi.advanceTimersByTime(30_000); // metade do cooldown
+      await expect(service.isNvencAvailable()).resolves.toBe(false);
+
+      expect(mockExecFile).toHaveBeenCalledTimes(1);
+    });
+
+    it('sonda de novo sozinho depois do cooldown — sem isso, um handle de GPU perdido travava o worker em CPU até restart manual', async () => {
+      process.env.GPU_PROBE_RETRY_COOLDOWN_MS = '60000';
+      failEncode();
+      const service = await newService();
+      await expect(service.isNvencAvailable()).resolves.toBe(false);
+
+      vi.advanceTimersByTime(60_001);
+      okEncode(); // a GPU "voltou a responder" (o caso real de produção)
+
+      await expect(service.isNvencAvailable()).resolves.toBe(true);
+      expect(mockExecFile).toHaveBeenCalledTimes(2);
+    });
+
+    it('sucesso não expira nunca, mesmo bem depois do cooldown de falha', async () => {
+      process.env.GPU_PROBE_RETRY_COOLDOWN_MS = '1000';
+      okEncode();
+      const service = await newService();
+      await expect(service.isNvencAvailable()).resolves.toBe(true);
+
+      vi.advanceTimersByTime(10 * 60_000);
+      await expect(service.isNvencAvailable()).resolves.toBe(true);
+
+      expect(mockExecFile).toHaveBeenCalledTimes(1);
+    });
+
+    it('chamadas concorrentes durante uma sonda em andamento não disparam ffmpeg duas vezes', async () => {
+      let resolveExec!: () => void;
+      mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: unknown, cb: Function) => {
+        resolveExec = () => cb(null, '', '');
+      });
+      const service = await newService();
+
+      const first = service.isNvencAvailable();
+      const second = service.isNvencAvailable();
+      resolveExec();
+
+      await expect(first).resolves.toBe(true);
+      await expect(second).resolves.toBe(true);
+      expect(mockExecFile).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('argumentos de codec', () => {
     it('usa NVENC com qualidade constante quando há GPU', async () => {
       const service = await newService();
