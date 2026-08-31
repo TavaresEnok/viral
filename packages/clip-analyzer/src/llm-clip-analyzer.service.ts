@@ -14,8 +14,25 @@ import type { TranscriptSegment } from './types.js';
 
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 const PROMPTS_DIR = resolve(MODULE_DIR, 'prompts');
-const MAX_SEGMENTS = 420;
-const MAX_BLOCK_CHARS = 70_000;
+/**
+ * Tamanho da janela enviada ao modelo por chamada.
+ *
+ * Configurável porque cada modelo aguenta um tamanho diferente. Modelos com
+ * contexto menor NÃO devolvem erro quando o bloco é grande demais: devolvem
+ * `{"clips":[]}` em ~1,5s (contra ~20s quando processam de verdade), e o
+ * pipeline cai no fallback burro sem nenhum sinal claro do motivo.
+ *
+ * Medido com minimax/minimax-m3:free — 120 segmentos: ok; 240: lista vazia.
+ * O padrão fica conservador para funcionar com modelos pequenos/gratuitos;
+ * suba em modelos de contexto grande para gastar menos chamadas.
+ */
+function positiveEnvInt(name: string, fallback: number): number {
+  const parsed = Number(process.env[name]);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
+const MAX_SEGMENTS = positiveEnvInt('LLM_WINDOW_MAX_SEGMENTS', 120);
+const MAX_BLOCK_CHARS = positiveEnvInt('LLM_WINDOW_MAX_CHARS', 20_000);
 
 // --- Controle de custo/latência da chamada ao LLM -------------------------
 // Sem teto, um transcript grande + retries podia gerar custo ilimitado.
@@ -61,8 +78,8 @@ const DURATION_CLAMP_TOLERANCE_S = 5;
 
 async function withRetry<T>(
   fn: () => Promise<T>,
-  maxAttempts = 3,
-  baseDelayMs = 1000,
+  maxAttempts = 4,
+  baseDelayMs = 2500,
 ): Promise<T> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {

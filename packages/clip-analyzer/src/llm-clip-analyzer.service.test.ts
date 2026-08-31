@@ -132,5 +132,8 @@ describe('LlmClipAnalyzerService', () => {
     });
     expect(mockCreate.mock.calls.length).toBeGreaterThanOrEqual(2);
     expect(result.telemetry.pass1Failed).toBe(true);
-  });
+    // withRetry usa backoff exponencial real (2.5s + 5s + 10s = 17.5s com
+    // maxAttempts=4/baseDelayMs=2500); o timeout padrão de 5s do vitest
+    // estourava antes do teste terminar.
+  }, 20_000);
 });
