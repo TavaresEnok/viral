@@ -85,10 +85,15 @@ services:
       # na transcrição. Custa ~2GB dos 16GB de VRAM.
       NODE_UNLOAD_ASR_AFTER_USE: ${NODE_UNLOAD_ASR_AFTER_USE:-false}
       NODE_MAX_CONCURRENT: ${NODE_MAX_CONCURRENT:-2}
-      # Detecção facial fica com o worker (face-engine em C++), não aqui —
-      # ligar isso exigiria torch/insightface, ~3GB à toa nesta imagem.
-      NODE_FACE_TRACKING_ENABLED: "false"
-      NODE_FACE_PREWARM: "false"
+      # Detecção facial na GPU via insightface/ONNX (backend "scrfd", ~300MB
+      # de imagem, sem torch — a decisão anterior de deixar isso de fora
+      # citava o stack YOLO/torch, ~3GB, que não é o caminho usado aqui).
+      # O worker chama /v1/track-faces com fallback automático pro binário
+      # C++ local (CPU) se a GPU falhar ou o serviço estiver fora do ar.
+      NODE_FACE_TRACKING_ENABLED: "true"
+      NODE_FACE_BACKEND: scrfd
+      NODE_FACE_DEVICE: cuda
+      NODE_FACE_PREWARM: "true"
       NVIDIA_VISIBLE_DEVICES: all
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
     volumes:

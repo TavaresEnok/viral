@@ -220,6 +220,26 @@ def probe_video_size(input_path: Path) -> tuple[int, int]:
     return int(width), int(height)
 
 
+def probe_video_duration(input_path: Path) -> float:
+    proc = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            str(input_path),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0 or not proc.stdout.strip():
+        raise RuntimeError("video duration probe failed")
+    return float(proc.stdout.strip())
+
+
 def get_face_app():
     global _face_app
     if _face_app is not None:
@@ -486,6 +506,80 @@ def smart_reframe_filter(input_path: Path, job_dir: Path, start: float, end: flo
         "backend": backend,
         "device": str(yolo_device) if backend == "yolo" else FACE_DEVICE,
     }
+
+
+def detect_face_track(input_path: Path, job_dir: Path, duration: float, fps: float) -> list[dict]:
+    """
+    Detecta rostos por frame e devolve pontos normalizados (0-1), no MESMO
+    contrato que o face_engine em C++ do worker já produz:
+    [{time, x, y, w, h, confidence}, ...] — x,y = canto superior esquerdo,
+    w,h = largura/altura, tudo normalizado pela largura/altura do frame.
+
+    `input_path` já é um recorte que começa em t=0 (o worker extrai só o
+    trecho do corte antes de enviar) — `time` aqui é relativo a esse recorte;
+    quem soma o offset absoluto do vídeo original é o worker, do mesmo jeito
+    que já faz para a retranscrição de legenda por corte.
+
+    Coleta TODOS os rostos acima do limiar por frame, não só o melhor — o
+    cluster de 2 pessoas do layout de podcast (lado do worker) depende disso.
+    """
+    if not FACE_TRACKING_ENABLED:
+        raise RuntimeError("face tracking disabled")
+    width, height = probe_video_size(input_path)
+    frames_dir = extract_tracking_frames(input_path, job_dir, 0, duration, fps)
+    frames = sorted(frames_dir.glob("frame_*.jpg"))
+    if not frames:
+        return []
+
+    import cv2
+
+    backend = FACE_BACKEND
+    detector = get_yolo_face_model() if backend == "yolo" else get_face_app()
+    yolo_device = 0 if FACE_DEVICE == "cuda" and accelerator_ready() else "cpu"
+    effective_fps = len(frames) / max(1.0, duration)
+
+    points: list[dict] = []
+    for index, frame_path in enumerate(frames):
+        image = cv2.imread(str(frame_path))
+        if image is None:
+            continue
+        img_h, img_w = image.shape[:2]
+        current_time = round(index / max(0.001, effective_fps), 3)
+
+        if backend == "yolo":
+            boxes = []
+            results = detector.predict(image, imgsz=FACE_DET_SIZE, conf=FACE_MIN_SCORE, device=yolo_device, verbose=False)
+            if results and getattr(results[0], "boxes", None) is not None:
+                for box in results[0].boxes:
+                    xyxy = box.xyxy[0].detach().cpu().numpy().tolist()
+                    conf = float(box.conf[0].detach().cpu().item()) if getattr(box, "conf", None) is not None else 1.0
+                    boxes.append((*xyxy, conf))
+        else:
+            boxes = [
+                (*[float(v) for v in face.bbox], float(getattr(face, "det_score", 1.0) or 0))
+                for face in detector.get(image)
+            ]
+
+        for x1, y1, x2, y2, score in boxes:
+            if score < FACE_MIN_SCORE:
+                continue
+            nx1 = clamp(x1 / img_w, 0.0, 1.0)
+            ny1 = clamp(y1 / img_h, 0.0, 1.0)
+            nx2 = clamp(x2 / img_w, 0.0, 1.0)
+            ny2 = clamp(y2 / img_h, 0.0, 1.0)
+            w = nx2 - nx1
+            h = ny2 - ny1
+            if w <= 0 or h <= 0:
+                continue
+            points.append({
+                "time": current_time,
+                "x": round(nx1, 5),
+                "y": round(ny1, 5),
+                "w": round(w, 5),
+                "h": round(h, 5),
+                "confidence": round(score, 4),
+            })
+    return points
 
 
 def video_layout_filter(render_layout: str) -> str:
@@ -1051,6 +1145,53 @@ def thumbnail(
     except Exception as exc:
         shutil.rmtree(job_dir, ignore_errors=True)
         raise HTTPException(status_code=500, detail=str(exc)[-2000:])
+
+
+@app.post("/v1/track-faces")
+def track_faces(
+    file: UploadFile = File(...),
+    fps: float = Form(default=2.0),
+    x_node_key: Optional[str] = Header(default=None),
+):
+    """
+    Face tracking na GPU, para os layouts SMART_REFRAME/SMART_CENTER/
+    SPEAKER_CLOSEUP/PODCAST_SPLIT_STATIC — hoje é a única etapa do render que
+    roda inteiramente na CPU do worker (o face_engine em C++ local não tem
+    build com CUDA). Este endpoint espelha o contrato de saída dele para o
+    worker poder trocar de fonte sem mexer no resto do pipeline (EMA de
+    suavização, cache em disco, clusterização de 2 rostos etc. continuam lá).
+
+    Recebe só o RECORTE do corte (não o vídeo inteiro) — quem extrai é o
+    worker, do mesmo jeito que já faz para reenviar áudio de retranscrição.
+    """
+    require_key(x_node_key)
+    job_id = uuid.uuid4().hex
+    job_dir = BASE_DIR / job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    started = time.perf_counter()
+    try:
+        suffix = Path(file.filename or "clip.mp4").suffix or ".mp4"
+        input_path = job_dir / f"input{suffix}"
+        with input_path.open("wb") as out:
+            while True:
+                chunk = file.file.read(1024 * 1024)
+                if not chunk:
+                    break
+                out.write(chunk)
+        duration = max(0.1, probe_video_duration(input_path))
+        points = detect_face_track(input_path, job_dir, duration, fps)
+        device_used = "cuda" if (FACE_DEVICE == "cuda" and accelerator_ready()) else "cpu"
+        return {
+            "ok": True,
+            "points": points,
+            "backend": FACE_BACKEND,
+            "device": device_used,
+            "sec": round(time.perf_counter() - started, 3),
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)[-2000:])
+    finally:
+        shutil.rmtree(job_dir, ignore_errors=True)
 
 
 @app.post("/v1/process")
