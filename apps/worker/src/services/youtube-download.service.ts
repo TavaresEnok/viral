@@ -60,7 +60,13 @@ export class YoutubeDownloadService {
     const aria2Connections = positiveEnvInt('YOUTUBE_ARIA2_CONNECTIONS', 16);
     const ytdlFlags = {
       output: outputTemplate,
-      format: 'bv*[height<=720]+ba/b[height<=720]/best[height<=720]/best',
+      // Prefere H.264 (avc1) antes de cair para qualquer codec. O YouTube serve
+      // AV1 por padrão em 720p, e AV1 só decodifica na CPU nesta stack: o
+      // `av1_cuvid` existe no ffmpeg, mas os filtros CUDA não aceitam o formato
+      // que ele entrega, então o decode volta para o libdav1d de qualquer jeito.
+      // Medido no mesmo trecho de 30s: 8,0s com AV1 contra 7,7s com H.264.
+      format:
+        'bv*[height<=720][vcodec^=avc1]+ba/bv*[height<=720]+ba/b[height<=720]/best[height<=720]/best',
       mergeOutputFormat: 'mp4',
       noPlaylist: true,
       noWarnings: true,
