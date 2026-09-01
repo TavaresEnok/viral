@@ -45,6 +45,12 @@ services:
       NVENC_CODEC: ${NVENC_CODEC:-}
       NVENC_PRESET: ${NVENC_PRESET:-p4}
       NVENC_CQ: ${NVENC_CQ:-}
+      # false volta os filtros do layout padrao pra CPU sem tocar no encode
+      # NVENC. O codigo ja assume "true" quando ausente, mas listar aqui
+      # permite desligar por env sem rebuild (a licao do NVENC_CQ: variavel
+      # nao listada aqui nunca chega ao container, nao importa o que o
+      # codigo assuma como padrao).
+      RENDER_GPU_FILTERS: ${RENDER_GPU_FILTERS:-true}
     depends_on:
       node-agent:
         condition: service_healthy

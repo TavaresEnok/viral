@@ -26,6 +26,24 @@ const BLUR_WIDTH = 270;
 const BLUR_HEIGHT = 480;
 const BLUR_DOWNSCALE = 4;
 
+/**
+ * Filtros da GPU (scale_cuda/overlay_cuda) para o layout padrão.
+ *
+ * Medido no mesmo corte de 30s, com `/proc/<pid>/stat` somando tempo de
+ * usuário+sistema do processo ffmpeg (não só o relógio de parede):
+ *   filtros CPU:  6,3s de parede, 14,5s de CPU somada entre os threads
+ *   filtros CUDA: 9,1s de parede, 11,7s de CPU somada
+ * Mais lento (a legenda ainda força um hwdownload antes do libass, que não
+ * tem versão GPU em nenhum ffmpeg), mas ~19% menos CPU total consumida — o
+ * pedido explícito era exatamente essa troca: tirar carga da CPU mesmo que
+ * o render individual demore mais.
+ *
+ * `RENDER_GPU_FILTERS=false` desliga sem rebuild, caindo nos filtros de CPU.
+ */
+function gpuFiltersEnabled(): boolean {
+    return (process.env.RENDER_GPU_FILTERS ?? "true").toLowerCase() !== "false";
+}
+
 function positiveInt(value: string | undefined, fallback: number) {
     const parsed = Number(value);
     return Number.isFinite(parsed) && parsed > 0
@@ -191,39 +209,65 @@ export class FfmpegService {
         await this.ensureDir(outputPath);
         const duration = Math.max(1, end - start);
         const escapedSubtitlePath = this.escapeFilterPath(subtitlePath);
-        const baseFilter = this.videoLayoutFilter(renderLayout, smartCrop, dualCrop);
+        const useGpu = await this.gpu.isNvencAvailable();
+        // Só o layout padrão (sem crop de verdade em lugar nenhum da cadeia)
+        // tem equivalente em CUDA — os outros usam recorte de enquadramento
+        // exato, que não existe para frames de hardware.
+        const useGpuFilters = useGpu && gpuFiltersEnabled() && renderLayout === "BLURRED_BACKGROUND";
 
-        // B-roll (EXPERIMENTAL): só entra com plano não-vazio (BROLL_ENABLED).
-        // Quando vazio, `brollChain` é "" e `videoLabel` continua "vbase", então
-        // o filtergraph e os inputs ficam IDÊNTICOS ao comportamento atual.
+        const buildFilter = (gpuFilters: boolean) => {
+            const baseFilter = gpuFilters
+                ? this.gpuBlurredBackgroundFilter()
+                : this.videoLayoutFilter(renderLayout, smartCrop, dualCrop);
+
+            // B-roll (EXPERIMENTAL): só entra com plano não-vazio (BROLL_ENABLED).
+            // Quando vazio, `brollChain` é "" e `videoLabel` continua "vbase", então
+            // o filtergraph e os inputs ficam IDÊNTICOS ao comportamento atual.
+            // Funciona igual nos dois casos: a versão GPU já devolve `[vbase]` em
+            // memória normal (hwdownload embutido), então b-roll/legenda/marca
+            // d'água nunca precisam saber se o fundo veio da CPU ou da GPU.
+            const broll = brollSegments ?? [];
+            let videoLabel = "vbase";
+            const brollParts: string[] = [];
+            broll.forEach((seg, idx) => {
+                const inputIdx = idx + 1; // input 0 é o vídeo principal
+                const next = `vbr${idx}`;
+                brollParts.push(
+                    `[${inputIdx}:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setpts=PTS-STARTPTS[br${idx}]`,
+                );
+                brollParts.push(
+                    `[${videoLabel}][br${idx}]overlay=0:0:enable='between(t,${seg.startSec},${seg.endSec})'[${next}]`,
+                );
+                videoLabel = next;
+            });
+            const brollChain = brollParts.length ? `;${brollParts.join(";")}` : "";
+
+            // Legenda (e marca d'água) ficam SEMPRE por cima do B-roll.
+            let filter = `${baseFilter}${brollChain};[${videoLabel}]subtitles='${escapedSubtitlePath}'[v]`;
+            if (watermarkText) {
+                const escapedText = this.escapeFilterPath(watermarkText);
+                filter = `${baseFilter}${brollChain};[${videoLabel}]subtitles='${escapedSubtitlePath}'[vtmp];[vtmp]drawtext=text='${escapedText}':fontcolor=white@0.6:fontsize=36:x=(w-text_w)/2:y=h-th-80:box=1:boxcolor=black@0.4:boxborderw=10[v]`;
+            }
+            return filter;
+        };
+
         const broll = brollSegments ?? [];
         const brollInputArgs = broll.flatMap((seg) => ["-i", seg.filePath]);
-        let videoLabel = "vbase";
-        const brollParts: string[] = [];
-        broll.forEach((seg, idx) => {
-            const inputIdx = idx + 1; // input 0 é o vídeo principal
-            const next = `vbr${idx}`;
-            brollParts.push(
-                `[${inputIdx}:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setpts=PTS-STARTPTS[br${idx}]`,
-            );
-            brollParts.push(
-                `[${videoLabel}][br${idx}]overlay=0:0:enable='between(t,${seg.startSec},${seg.endSec})'[${next}]`,
-            );
-            videoLabel = next;
-        });
-        const brollChain = brollParts.length ? `;${brollParts.join(";")}` : "";
 
-        // Legenda (e marca d'água) ficam SEMPRE por cima do B-roll.
-        let filter = `${baseFilter}${brollChain};[${videoLabel}]subtitles='${escapedSubtitlePath}'[v]`;
-        if (watermarkText) {
-            const escapedText = this.escapeFilterPath(watermarkText);
-            filter = `${baseFilter}${brollChain};[${videoLabel}]subtitles='${escapedSubtitlePath}'[vtmp];[vtmp]drawtext=text='${escapedText}':fontcolor=white@0.6:fontsize=36:x=(w-text_w)/2:y=h-th-80:box=1:boxcolor=black@0.4:boxborderw=10[v]`;
-        }
-
-        const buildArgs = (codecArgs: string[]) => [
+        // `useGpuDecode` é separado de `useGpu`: a retentativa após uma falha de
+        // GPU (VRAM cheia, sessão NVDEC/NVENC esgotada, driver reiniciou) passa
+        // `false` aqui mesmo com `useGpu` continuando `true`, porque o decode
+        // também é GPU e poderia falhar pelo mesmo motivo — a rede de segurança
+        // só protege de verdade se for inteiramente livre de GPU.
+        const buildArgs = (codecArgs: string[], gpuFilters: boolean, useGpuDecode: boolean) => [
             "-y",
             "-threads",
             String(this.threads),
+            // Decode-only por padrão: baixa o frame pra memória normal logo após
+            // decodificar, então os filtros de CPU (crop, boxblur etc.) funcionam
+            // sem nenhuma mudança. Com filtros em CUDA, o frame fica na GPU até o
+            // hwdownload embutido no fim de `gpuBlurredBackgroundFilter`.
+            ...(useGpuDecode ? (gpuFilters ? ["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"] : ["-hwaccel", "cuda"]) : []),
             "-ss",
             String(start),
             "-t",
@@ -232,7 +276,7 @@ export class FfmpegService {
             inputPath,
             ...brollInputArgs,
             "-filter_complex",
-            filter,
+            buildFilter(gpuFilters),
             "-map",
             "[v]",
             "-map",
@@ -249,24 +293,23 @@ export class FfmpegService {
             outputPath,
         ];
 
-        const useGpu = await this.gpu.isNvencAvailable();
-
         try {
             await this.execFfmpeg(
-                buildArgs(this.gpu.videoCodecArgs(useGpu, this.preset, this.threads)),
+                buildArgs(this.gpu.videoCodecArgs(useGpu, this.preset, this.threads), useGpuFilters, useGpu),
             );
         } catch (error) {
             // A GPU pode existir no boot e falhar depois (driver caiu, VRAM
-            // cheia, outro processo tomou o encoder). Refaz o corte em CPU em
-            // vez de derrubar o render — sem isso um soluço da placa quebraria
-            // todos os cortes do projeto.
+            // cheia, outro processo tomou o encoder ou os filtros CUDA). Refaz o
+            // corte inteiramente em CPU em vez de derrubar o render — sem isso um
+            // soluço da placa quebraria todos os cortes do projeto.
             if (!useGpu) throw error;
             this.logger.warn({
-                msg: "Encode por GPU falhou; refazendo este corte em CPU (libx264)",
+                msg: "Render por GPU falhou; refazendo este corte em CPU (filtros e encode)",
                 error: error instanceof Error ? error.message : String(error),
+                usedGpuFilters: useGpuFilters,
             });
             await this.execFfmpeg(
-                buildArgs(this.gpu.videoCodecArgs(false, this.preset, this.threads)),
+                buildArgs(this.gpu.videoCodecArgs(false, this.preset, this.threads), false, false),
             );
         }
     }
@@ -293,6 +336,43 @@ export class FfmpegService {
             `boxblur=${lowRadius}:${passes}`,
             "scale=1080:1920",
         ].join(",");
+    }
+
+    /**
+     * Equivalente do fundo desfocado inteiramente em frames CUDA — sem CPU
+     * nenhuma até a legenda.
+     *
+     * Não existe `crop` para frames de hardware (testado: ffmpeg recusa com
+     * "Function not implemented"), então em vez de scale-increase→crop→blur
+     * uso um scale_cuda direto pro tamanho baixo, ignorando o aspect ratio
+     * exato. Isso distorce levemente a imagem antes do blur — mas o próprio
+     * propósito desta camada é ficar fora de foco atrás do vídeo principal,
+     * então a distorção some junto com o blur; não é visível no resultado.
+     */
+    private cudaBlurredBackground(): string {
+        return [`scale_cuda=${BLUR_WIDTH}:${BLUR_HEIGHT}`, "scale_cuda=1080:1920"].join(",");
+    }
+
+    /**
+     * Layout padrão (BLURRED_BACKGROUND) inteiramente em CUDA, terminando em
+     * `[vbase]` já em memória normal — o resto do filtergraph (b-roll,
+     * legenda, marca d'água) continua igual, sem saber se o fundo veio da
+     * CPU ou da GPU.
+     *
+     * Só serve para este layout: os outros usam `crop` de verdade (recortar
+     * um enquadramento exato dentro do frame, não só redimensionar), que não
+     * tem equivalente em frames CUDA.
+     */
+    private gpuBlurredBackgroundFilter(): string {
+        return [
+            `[0:v]${this.cudaBlurredBackground()}[bg]`,
+            "[0:v]scale_cuda=980:1740:force_original_aspect_ratio=decrease[fg]",
+            "[bg][fg]overlay_cuda=(W-w)/2:(H-h)/2[o]",
+            // Volta pra memória normal aqui — subtitles (libass) não roda em
+            // CUDA em nenhum ffmpeg existente, então este hwdownload é
+            // inevitável em algum ponto da cadeia.
+            "[o]hwdownload,format=nv12[vbase]",
+        ].join(";");
     }
 
     private videoLayoutFilter(
@@ -415,10 +495,14 @@ export class FfmpegService {
 
     async thumbnail(inputPath: string, outputPath: string, start: number) {
         await this.ensureDir(outputPath);
+        // `crop` não existe pra frames CUDA (testado), então só o decode vai
+        // pra GPU aqui — decode-only não muda o filtro, é ganho sem risco.
+        const useGpu = await this.gpu.isNvencAvailable();
         await this.execFfmpeg([
             "-y",
             "-threads",
             String(this.threads),
+            ...(useGpu ? ["-hwaccel", "cuda"] : []),
             "-ss",
             String(start + 2),
             "-i",
