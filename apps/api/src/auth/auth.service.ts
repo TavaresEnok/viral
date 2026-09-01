@@ -12,8 +12,8 @@ import type { LoginDto, RegisterDto, ForgotPasswordDto, ResetPasswordDto, Verify
 const BRUTE_FORCE_WINDOW_MS = 15 * 60 * 1000;
 const BRUTE_FORCE_LOCK_MS = 15 * 60 * 1000;
 const BRUTE_FORCE_MAX_ATTEMPTS = 10;
-const ACCESS_TOKEN_TTL = '15m';
-const REFRESH_TOKEN_DAYS = 7;
+const ACCESS_TOKEN_TTL = (process.env.ACCESS_TOKEN_TTL ?? '7d') as `${number}${'s' | 'm' | 'h' | 'd'}`;
+const REFRESH_TOKEN_DAYS = Number(process.env.REFRESH_TOKEN_DAYS ?? 30);
 const EMAIL_VERIFY_HOURS = 24;
 const PASSWORD_RESET_HOURS = 1;
 

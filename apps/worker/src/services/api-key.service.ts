@@ -55,6 +55,9 @@ export class ApiKeyService {
       llmModel: useGlobalLlm
         ? platform!.llmModel!
         : (activeLlm?.model ?? user.deepseekModel ?? process.env.DEEPSEEK_MODEL ?? 'deepseek-chat'),
+      llmMaxCostUsd: platform?.llmMaxCostUsd !== undefined && platform?.llmMaxCostUsd !== null
+        ? platform.llmMaxCostUsd
+        : Number(process.env.LLM_MAX_COST_USD ?? 0.5),
       openaiApiKey: useGlobalTranscription
         ? (globalTranscriptionKey ?? process.env.OPENAI_API_KEY ?? null)
         : (integrationTranscriptionKey ??

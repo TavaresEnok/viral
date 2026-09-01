@@ -78,7 +78,6 @@ export class JobsService {
       },
       data: {
         status: ProjectStatus.FAILED,
-        progress: 100,
         errorMessage: `Processamento excedeu ${process.env.PROJECT_PROCESSING_TIMEOUT_MINUTES ?? 180} minutos e foi marcado como falho automaticamente.`,
       },
     });

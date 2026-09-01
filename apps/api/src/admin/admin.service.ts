@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException, OnModuleDestroy } f
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { Queue } from 'bullmq';
-import { REDIS_CONFIG, VIDEO_PROCESSING_QUEUE, encryptSecret, getMasterSecret } from '@viralforge/shared';
+import { REDIS_CONFIG, VIDEO_PROCESSING_QUEUE, decryptSecret, encryptSecret, getMasterSecret } from '@viralforge/shared';
 import { PLATFORM_AI_CONFIG_ID } from './platform-ai-config.constants.js';
 import { PrismaService } from '../prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
@@ -690,6 +690,8 @@ export class AdminService implements OnModuleDestroy {
       llmProvider: config?.llmProvider ?? '',
       llmModel: config?.llmModel ?? '',
       llmBaseUrl: config?.llmBaseUrl ?? '',
+      llmApiKeyEncrypted: config?.llmApiKeyEncrypted ?? null,
+      llmMaxCostUsd: config?.llmMaxCostUsd ?? 0.5,
       llmKeySet: Boolean(config?.llmApiKeyEncrypted),
       transcriptionActive: config?.transcriptionActive ?? false,
       transcriptionProvider: config?.transcriptionProvider ?? '',
@@ -697,6 +699,96 @@ export class AdminService implements OnModuleDestroy {
       transcriptionBaseUrl: config?.transcriptionBaseUrl ?? '',
       transcriptionKeySet: Boolean(config?.transcriptionApiKeyEncrypted),
     };
+  }
+
+  /**
+   * Faz uma chamada real ao provider para dizer se a configuração funciona.
+   *
+   * Existe porque salvar a configuração não provava nada: um modelo aposentado
+   * era aceito sem reclamar e só aparecia como cortes ruins horas depois, já
+   * que o pipeline caía no fallback por tempo. Aqui o erro do provider chega
+   * inteiro na tela de quem configurou.
+   *
+   * Aceita valores do formulário ainda não salvos; o que faltar vem do banco
+   * (a chave é decifrada), então dá para testar antes de gravar.
+   */
+  async testAiConfig(dto: { llmModel?: string; llmBaseUrl?: string; llmApiKey?: string }) {
+    const saved = await this.prisma.platformAiConfig.findUnique({ where: { id: PLATFORM_AI_CONFIG_ID } });
+    const model = (dto.llmModel || saved?.llmModel || '').trim();
+    const baseUrl = (dto.llmBaseUrl || saved?.llmBaseUrl || '').trim().replace(/\/+$/, '');
+
+    let apiKey = dto.llmApiKey?.trim() ?? '';
+    if (!apiKey && saved?.llmApiKeyEncrypted) {
+      const masterSecret = getMasterSecret();
+      if (!masterSecret) throw new BadRequestException('MASTER_SECRET não configurada.');
+      apiKey = decryptSecret(saved.llmApiKeyEncrypted, masterSecret) ?? '';
+    }
+
+    if (!model) return { ok: false, message: 'Nenhum modelo informado.' };
+    if (!baseUrl) return { ok: false, message: 'Nenhuma URL base informada.' };
+    if (!apiKey) return { ok: false, message: 'Nenhuma chave de API salva nem informada.' };
+
+    const startedAt = Date.now();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30_000);
+    try {
+      const response = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: 'user', content: 'Responda apenas: ok' }],
+          max_tokens: 10,
+        }),
+        signal: controller.signal,
+      });
+      const latencyMs = Date.now() - startedAt;
+      const raw = await response.text();
+
+      if (response.ok) {
+        let reply = '';
+        try {
+          reply = JSON.parse(raw)?.choices?.[0]?.message?.content?.trim() ?? '';
+        } catch {
+          /* resposta 200 ilegível ainda conta como provider acessível */
+        }
+        return { ok: true, model, latencyMs, message: `Modelo respondeu em ${latencyMs}ms.`, reply };
+      }
+
+      return {
+        ok: false,
+        model,
+        latencyMs,
+        status: response.status,
+        message: `HTTP ${response.status}: ${this.readProviderError(raw)}`,
+      };
+    } catch (error) {
+      const latencyMs = Date.now() - startedAt;
+      const aborted = error instanceof Error && error.name === 'AbortError';
+      return {
+        ok: false,
+        model,
+        latencyMs,
+        message: aborted
+          ? 'O provider não respondeu em 30s.'
+          : `Falha de rede: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  /** Extrai a mensagem de erro do provider, que varia de formato entre eles. */
+  private readProviderError(raw: string): string {
+    try {
+      const parsed = JSON.parse(raw);
+      const node = Array.isArray(parsed) ? parsed[0] : parsed;
+      const message = node?.error?.message ?? node?.message;
+      if (typeof message === 'string' && message.trim()) return message.trim();
+    } catch {
+      /* provider pode devolver texto puro ou corpo vazio */
+    }
+    return raw.trim().slice(0, 300) || 'sem detalhes no corpo da resposta';
   }
 
   async setAiConfig(
@@ -707,6 +799,7 @@ export class AdminService implements OnModuleDestroy {
       llmModel?: string;
       llmBaseUrl?: string;
       llmApiKey?: string;
+      llmMaxCostUsd?: number | null;
       transcriptionActive?: boolean;
       transcriptionProvider?: string;
       transcriptionModel?: string;
@@ -731,6 +824,7 @@ export class AdminService implements OnModuleDestroy {
       llmProvider: dto.llmProvider ?? null,
       llmModel: dto.llmModel ?? null,
       llmBaseUrl: dto.llmBaseUrl ?? null,
+      llmMaxCostUsd: typeof dto.llmMaxCostUsd === 'number' ? dto.llmMaxCostUsd : (dto.llmMaxCostUsd === null ? null : undefined),
       transcriptionActive: dto.transcriptionActive ?? false,
       transcriptionProvider: dto.transcriptionProvider ?? null,
       transcriptionModel: dto.transcriptionModel ?? null,
@@ -750,7 +844,7 @@ export class AdminService implements OnModuleDestroy {
       entityType: 'platform_ai_config',
       entityId: PLATFORM_AI_CONFIG_ID,
       ip,
-      metadata: { llmActive: data.llmActive, llmModel: data.llmModel, transcriptionActive: data.transcriptionActive },
+      metadata: { llmActive: data.llmActive, llmModel: data.llmModel, llmMaxCostUsd: data.llmMaxCostUsd, transcriptionActive: data.transcriptionActive },
     });
     return { ok: true };
   }

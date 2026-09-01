@@ -51,7 +51,12 @@ export function useProjectSSE(projectId: string): ProjectSSEState {
           reconnectAttempts = 0;
           setLive(true);
           try {
-            setStatus(JSON.parse(event.data) as JobStatus);
+            const parsed = JSON.parse(event.data) as JobStatus;
+            setStatus(parsed);
+            if (parsed.status === 'COMPLETED' || parsed.status === 'FAILED') {
+              es.close();
+              eventSourceRef.current = null;
+            }
           } catch {
             // ignora mensagem malformada
           }

@@ -132,6 +132,14 @@ export class PipelineMetricsService implements OnModuleInit, OnModuleDestroy {
             throw new Error(`Projeto ${projectId} não existe mais`);
         }
         await this.upsertProcessingJob(projectId, stage, progress, status, errorMessage);
+
+        // Notifica o SSE em TODA mudança de progresso/stage — antes o publish
+        // ficava só no branch de "create" do upsertProcessingJob; quando o
+        // stage já existia (update), a notificação nunca era enviada e a
+        // barra do frontend congelava no primeiro estado.
+        await this.redisPublisher
+            .publish(`project:${projectId}:updates`, "update")
+            .catch(() => {});
     }
 
     async upsertProcessingJob(
@@ -159,9 +167,5 @@ export class PipelineMetricsService implements OnModuleInit, OnModuleDestroy {
             return;
         }
         await this.prisma.processingJob.create({ data: { projectId, stage, ...data } });
-
-        await this.redisPublisher
-            .publish(`project:${projectId}:updates`, "update")
-            .catch(() => {});
     }
 }

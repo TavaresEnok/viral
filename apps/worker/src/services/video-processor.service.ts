@@ -1,5 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
-import { LlmClipAnalyzerService, MODEL_COST_PER_1K, type LlmTelemetry } from "@viralforge/clip-analyzer";
+import { LlmClipAnalyzerService, MODEL_COST_PER_1K, modelCostPer1k, type LlmTelemetry } from "@viralforge/clip-analyzer";
 import type { QueueJobPayload } from "@viralforge/shared";
 import { unlink } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
@@ -86,6 +86,7 @@ export class VideoProcessorService {
         const runStartedAt = performance.now();
         const stageTimings: Record<string, number> = {};
         let currentStage = "STARTING";
+        let currentProgress = 0;
         let duration: number | null = null;
         let transcriptForMetrics: TranscriptWithMetadata | null = null;
         let llmTelemetryForMetrics: LlmTelemetry | null = null;
@@ -116,6 +117,7 @@ export class VideoProcessorService {
             const audioPath = resolve(baseDir, "audio.mp3");
 
             currentStage = "DOWNLOADING_VIDEO";
+            currentProgress = 8;
             const originalFilePath = await this.metrics.measure(
                 stageTimings,
                 payload.sourceUrl ? "download_video_sec" : "resolve_original_file_sec",
@@ -163,6 +165,7 @@ export class VideoProcessorService {
             const cachedTranscript = await this.transcript.loadCachedTranscript(payload.projectId);
             if (cachedTranscript) {
                 currentStage = "TRANSCRIBING";
+                currentProgress = 25;
                 log("Reusando transcrição já salva", {
                     stage: "TRANSCRIBING",
                     source: cachedTranscript.source ?? "cached",
@@ -174,6 +177,7 @@ export class VideoProcessorService {
 
             if (!transcriptData && payload.sourceUrl) {
                 currentStage = "TRANSCRIBING";
+                currentProgress = 25;
                 log("Transcrevendo", { stage: "TRANSCRIBING", source: "youtube_captions" });
                 await this.metrics.stage(payload.projectId, "TRANSCRIBING", 25);
                 transcriptData = await this.metrics.measure(
@@ -195,6 +199,7 @@ export class VideoProcessorService {
 
             if (!transcriptData) {
                 currentStage = "EXTRACTING_AUDIO";
+                currentProgress = 10;
                 log("Extraindo áudio", { stage: "EXTRACTING_AUDIO" });
                 await this.metrics.stage(payload.projectId, "EXTRACTING_AUDIO", 10);
                 await this.metrics.measure(stageTimings, "extract_audio_sec", () =>
@@ -205,6 +210,7 @@ export class VideoProcessorService {
                     data: { audioFilePath: audioPath },
                 });
                 currentStage = "TRANSCRIBING";
+                currentProgress = 25;
                 log("Transcrevendo", { stage: "TRANSCRIBING", source: "audio_asr" });
                 await this.metrics.stage(payload.projectId, "TRANSCRIBING", 25);
                 transcriptData = await this.metrics.measure(
@@ -231,6 +237,7 @@ export class VideoProcessorService {
             );
 
             currentStage = "ANALYZING_CLIPS";
+            currentProgress = 50;
             if (!keys.llmApiKey && !aiFallbackAllowed()) {
                 throw new Error(
                     "Nenhum provider de IA configurado e ALLOW_AI_FALLBACK=false. Configure o modelo global em /admin/ai antes de processar.",
@@ -242,6 +249,7 @@ export class VideoProcessorService {
                 apiKey: keys.llmApiKey ?? undefined,
                 baseURL: keys.llmBaseUrl,
                 model: keys.llmModel,
+                maxCostUsd: keys.llmMaxCostUsd,
                 logger: (message) => log(message),
             });
             const feedbackNotes = await this.feedbackProfile
@@ -316,6 +324,7 @@ export class VideoProcessorService {
             }
 
             currentStage = "SAVING_CLIPS";
+            currentProgress = 60;
             log("Salvando cortes", { stage: "SAVING_CLIPS", clipCount: validatedClips.length });
             await this.metrics.stage(payload.projectId, "SAVING_CLIPS", 60);
             await this.metrics.measure(stageTimings, "save_clips_sec", () =>
@@ -349,6 +358,7 @@ export class VideoProcessorService {
             });
 
             currentStage = "RENDERING";
+            currentProgress = 70;
             log("Renderizando cortes", { stage: "RENDERING" });
             await this.metrics.stage(payload.projectId, "RENDERING", 70);
 
@@ -391,6 +401,8 @@ export class VideoProcessorService {
             }
 
             log("Processamento concluído", { stage: "COMPLETED" });
+            currentStage = "COMPLETED";
+            currentProgress = 100;
             await this.metrics.stage(payload.projectId, "COMPLETED", 100, "COMPLETED");
             await this.render.registerQuotaMinutes(payload.userId, duration);
             await this.metrics.savePipelineRunMetric({
@@ -416,7 +428,7 @@ export class VideoProcessorService {
                 error instanceof Error ? error.message : "Erro desconhecido no processamento";
             log(`Falha no processamento: ${message}`, { stage: "FAILED" });
             await this.metrics
-                .stage(payload.projectId, "FAILED", 100, "FAILED", message)
+                .stage(payload.projectId, "FAILED", currentProgress, "FAILED", message)
                 .catch((stageError) => {
                     log("Projeto sumiu antes de registrar falha; job descartado", {
                         error:
@@ -675,9 +687,9 @@ export class VideoProcessorService {
 
     private estimateCost(telemetry: LlmTelemetry): number | null {
         // Tabela de preços vem do clip-analyzer (fonte única da verdade).
-        const rate = MODEL_COST_PER_1K[telemetry.pass1Model]
-            ?? MODEL_COST_PER_1K[telemetry.pass2Model]
-            ?? 0.0003;
-        return Math.round(telemetry.totalTokens * rate * 1000) / 1000;
+        const rate = modelCostPer1k(telemetry.pass1Model)
+            || modelCostPer1k(telemetry.pass2Model)
+            || 0.0003;
+        return Math.round(((telemetry.totalTokens / 1000) * rate) * 10000) / 10000;
     }
 }

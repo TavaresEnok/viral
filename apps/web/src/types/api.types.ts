@@ -142,6 +142,7 @@ export interface AdminAiConfig {
     llmModel: string;
     llmBaseUrl: string;
     llmKeySet: boolean;
+    llmMaxCostUsd?: number | null;
     transcriptionActive: boolean;
     transcriptionProvider: string;
     transcriptionModel: string;
@@ -155,11 +156,21 @@ export interface AdminAiConfigInput {
     llmModel: string;
     llmBaseUrl: string;
     llmApiKey: string;
+    llmMaxCostUsd?: number | null;
     transcriptionActive: boolean;
     transcriptionProvider: string;
     transcriptionModel: string;
     transcriptionBaseUrl: string;
     transcriptionApiKey: string;
+}
+
+export interface AdminAiConfigTestResult {
+    ok: boolean;
+    model?: string;
+    latencyMs?: number;
+    status?: number;
+    message: string;
+    reply?: string;
 }
 
 export interface AdminGrowth {

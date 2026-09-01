@@ -560,6 +560,7 @@ model PlatformAiConfig {
   llmModel                     String?
   llmBaseUrl                   String?
   llmApiKeyEncrypted           String?
+  llmMaxCostUsd                Float?   @default(0.5)
   transcriptionActive          Boolean  @default(false)
   transcriptionProvider        String?
   transcriptionModel           String?

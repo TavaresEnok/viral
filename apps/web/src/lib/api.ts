@@ -535,6 +535,11 @@ export const api = {
         aiConfig: () => request<import("@/types/api.types").AdminAiConfig>("/admin/ai-config"),
         setAiConfig: (data: Partial<import("@/types/api.types").AdminAiConfigInput>) =>
             request<{ ok: true }>("/admin/ai-config", { method: "PUT", body: JSON.stringify(data) }),
+        testAiConfig: (data: { llmModel?: string; llmBaseUrl?: string; llmApiKey?: string }) =>
+            request<import("@/types/api.types").AdminAiConfigTestResult>("/admin/ai-config/test", {
+                method: "POST",
+                body: JSON.stringify(data),
+            }),
         audit: (page = 1, scope = "") =>
             request<import("@/types/api.types").AdminAuditResponse>(
                 `/admin/audit?page=${page}${scope ? `&scope=${encodeURIComponent(scope)}` : ""}`,

@@ -92,6 +92,13 @@ export class AdminController {
     return this.adminService.setAiConfig(actor.id, body ?? {}, req.ip);
   }
 
+  // Testa a configuração de IA sem gravá-la: aceita o que está no formulário e
+  // completa o resto com o que já está salvo. Cadastrar não provava nada.
+  @Post('ai-config/test')
+  testAiConfig(@Body() body: Parameters<AdminService['testAiConfig']>[0]) {
+    return this.adminService.testAiConfig(body ?? {});
+  }
+
   @Get('growth')
   growth() {
     return this.adminService.growth();

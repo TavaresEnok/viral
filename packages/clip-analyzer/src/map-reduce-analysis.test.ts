@@ -202,4 +202,27 @@ describe('análise em janelas (map-reduce)', () => {
     // O ponto principal: nenhuma chamada paga foi feita.
     expect(mockCreate).not.toHaveBeenCalled();
   });
+
+  it('aceita maxCostUsd passado diretamente pelas opções do construtor', async () => {
+    const { LlmClipAnalyzerService } = await import('./llm-clip-analyzer.service.js');
+    const svc = new LlmClipAnalyzerService({ apiKey: 'test-key', maxCostUsd: 0.0000001 });
+
+    await expect(
+      svc.analyzeTranscript({
+        transcript: buildTranscript(600),
+        clipStyle: 'VIRAL',
+        language: 'pt-BR',
+      }),
+    ).rejects.toThrow(/excede o teto/i);
+
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it('calcula preço correto para modelos da família Gemini', async () => {
+    const { modelCostPer1k } = await import('./llm-clip-analyzer.service.js');
+    expect(modelCostPer1k('gemini-2.5-flash')).toBe(0.00015);
+    expect(modelCostPer1k('gemini-2.0-flash')).toBe(0.0001);
+    expect(modelCostPer1k('gemini-1.5-flash')).toBe(0.000075);
+    expect(modelCostPer1k('minimax/minimax-m3:free')).toBe(0);
+  });
 });

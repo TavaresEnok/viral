@@ -143,6 +143,13 @@ export class ThrottlerGuard implements CanActivate {
         ttlMs: Number(process.env.PROJECT_WRITE_RATE_LIMIT_TTL_MS ?? 60_000),
       };
     }
+    if (/\/jobs\/[^/]+(\/sse-ticket|\/stream)?$/.test(path)) {
+      return {
+        bucket: 'jobs-status',
+        limit: Number(process.env.JOBS_STATUS_RATE_LIMIT ?? 180),
+        ttlMs: 60_000,
+      };
+    }
     return {
       bucket: 'global',
       limit: this.limit,

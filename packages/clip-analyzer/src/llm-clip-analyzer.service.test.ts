@@ -76,17 +76,15 @@ describe('LlmClipAnalyzerService', () => {
     ).rejects.toThrow();
   });
 
-  it('retorna [] e pass1Failed=true quando API lança erro não-retryable', async () => {
-    mockCreate.mockRejectedValue(new Error('500 Internal Server Error'));
+  it('lança erro quando o provider falha em todas as janelas', async () => {
+    // Provider fora do ar / modelo aposentado não pode virar fallback silencioso:
+    // o chamador precisa ver a mensagem real para corrigir a configuração.
+    mockCreate.mockRejectedValue(new Error('404 model no longer available'));
     const { LlmClipAnalyzerService } = await import('./llm-clip-analyzer.service.js');
-    const svc = new LlmClipAnalyzerService({ apiKey: 'test-key' });
-    const result = await svc.analyzeTranscript({
-      transcript: mockTranscript,
-      clipStyle: 'VIRAL',
-      language: 'pt-BR',
-    });
-    expect(result.clips).toEqual([]);
-    expect(result.telemetry.pass1Failed).toBe(true);
+    const svc = new LlmClipAnalyzerService({ apiKey: 'test-key', model: 'modelo-aposentado' });
+    await expect(
+      svc.analyzeTranscript({ transcript: mockTranscript, clipStyle: 'VIRAL', language: 'pt-BR' }),
+    ).rejects.toThrow(/modelo-aposentado.*404 model no longer available/s);
   });
 
   it('retorna [] sem lançar quando resposta JSON é malformada', async () => {
@@ -121,19 +119,64 @@ describe('LlmClipAnalyzerService', () => {
     expect(result.telemetry.pass1Failed).toBe(false);
   });
 
-  it('faz retry em erro 429 e tem pass1Failed=true após esgotar tentativas', async () => {
+  it('faz retry em erro 429 e lança após esgotar tentativas', async () => {
     mockCreate.mockRejectedValue(new Error('429 Too Many Requests rate limit exceeded'));
     const { LlmClipAnalyzerService } = await import('./llm-clip-analyzer.service.js');
     const svc = new LlmClipAnalyzerService({ apiKey: 'test-key' });
-    const result = await svc.analyzeTranscript({
-      transcript: mockTranscript,
-      clipStyle: 'VIRAL',
-      language: 'pt-BR',
-    });
+    await expect(
+      svc.analyzeTranscript({ transcript: mockTranscript, clipStyle: 'VIRAL', language: 'pt-BR' }),
+    ).rejects.toThrow(/429/);
     expect(mockCreate.mock.calls.length).toBeGreaterThanOrEqual(2);
-    expect(result.telemetry.pass1Failed).toBe(true);
     // withRetry usa backoff exponencial real (2.5s + 5s + 10s = 17.5s com
     // maxAttempts=4/baseDelayMs=2500); o timeout padrão de 5s do vitest
     // estourava antes do teste terminar.
   }, 20_000);
+
+  it('NÃO lança quando só parte das janelas falha (degrada com elegância)', async () => {
+    // Transcrição longa o bastante para virar mais de uma janela.
+    const segments = Array.from({ length: 300 }, (_, i) => ({
+      start: i * 5,
+      end: i * 5 + 5,
+      text: `Segmento número ${i} com conteúdo suficiente para ocupar espaço no bloco.`,
+    }));
+    const longTranscript = {
+      segments,
+      fullText: segments.map((s) => s.text).join(' '),
+      language: 'pt-BR',
+      duration: 1500,
+    };
+    const ok = {
+      usage: { total_tokens: 100 },
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              clips: [
+                {
+                  start: 10,
+                  end: 45,
+                  title: 'Um corte plausível',
+                  reason: 'trecho com gancho forte',
+                  viral_score: 80,
+                },
+              ],
+            }),
+          },
+        },
+      ],
+    };
+    // Primeira janela falha, as demais respondem.
+    mockCreate.mockRejectedValueOnce(new Error('503 upstream indisponível')).mockResolvedValue(ok);
+
+    const { LlmClipAnalyzerService } = await import('./llm-clip-analyzer.service.js');
+    const svc = new LlmClipAnalyzerService({ apiKey: 'test-key' });
+    const result = await svc.analyzeTranscript({
+      transcript: longTranscript,
+      clipStyle: 'VIRAL',
+      language: 'pt-BR',
+      minViralScore: 0,
+    });
+    expect(mockCreate.mock.calls.length).toBeGreaterThan(1);
+    expect(result.telemetry.pass1Failed).toBe(false);
+  }, 30_000);
 });

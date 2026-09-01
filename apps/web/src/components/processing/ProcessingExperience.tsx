@@ -25,6 +25,17 @@ const stages = [
   { min: 92, label: 'Renderizando' },
 ];
 
+const STAGE_BY_KEY: Record<string, number> = {
+  STARTING: 0,
+  DOWNLOADING_VIDEO: 0,
+  EXTRACTING_AUDIO: 1,
+  TRANSCRIBING: 1,
+  ANALYZING_CLIPS: 2,
+  SAVING_CLIPS: 3,
+  RENDERING: 4,
+  COMPLETED: 6,
+};
+
 function clampProgress(progress: number) {
   return Math.max(0, Math.min(100, Math.round(progress || 0)));
 }
@@ -46,12 +57,11 @@ export function ProcessingExperience({
 }: ProcessingExperienceProps) {
   const completed = status === 'COMPLETED';
   const safeProgress = completed ? 100 : clampProgress(progress);
+  const stageFromKey = jobStage ? STAGE_BY_KEY[jobStage.toUpperCase()] : undefined;
+  const progressIndex = stages.reduce((acc, stage, index) => (safeProgress >= stage.min ? index : acc), 0);
   const activeIndex = completed
     ? stages.length
-    : Math.max(
-        0,
-        stages.reduce((acc, stage, index) => (safeProgress >= stage.min ? index : acc), 0),
-      );
+    : Math.max(0, stageFromKey !== undefined ? Math.max(stageFromKey, progressIndex) : progressIndex);
   const currentStage = stages[Math.min(activeIndex, stages.length - 1)];
   const normalizedStage = readableJobStage(jobStage);
 

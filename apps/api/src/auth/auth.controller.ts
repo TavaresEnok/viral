@@ -138,22 +138,29 @@ export class AuthController {
     return match ? decodeURIComponent(match.slice(this.cookieName().length + 1)) : undefined;
   }
 
+  private isSecureCookie(): boolean {
+    if (process.env.COOKIE_SECURE === 'false') return false;
+    if (process.env.COOKIE_SECURE === 'true') return true;
+    const origin = process.env.WEB_ORIGIN ?? '';
+    return origin.startsWith('https://');
+  }
+
   private setRefreshCookie(response: Response, token: string, expiresAt: Date) {
     response.cookie(this.cookieName(), token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      secure: this.isSecureCookie(),
+      sameSite: 'lax',
       expires: expiresAt,
-      path: '/auth',
+      path: '/',
     });
   }
 
   private clearRefreshCookie(response: Response) {
     response.clearCookie(this.cookieName(), {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      path: '/auth',
+      secure: this.isSecureCookie(),
+      sameSite: 'lax',
+      path: '/',
     });
   }
 

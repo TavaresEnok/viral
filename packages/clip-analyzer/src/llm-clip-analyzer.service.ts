@@ -61,18 +61,69 @@ const DEDUPE_OVERLAP_RATIO = 0.5;
  * em vez de manter uma cópia própria da tabela.
  */
 export const MODEL_COST_PER_1K: Record<string, number> = {
+  // DeepSeek
   'deepseek-chat': 0.00027,
   'deepseek-reasoner': 0.00055,
+  // OpenAI
   'gpt-4o-mini': 0.00015,
   'gpt-4o': 0.0025,
+  'gpt-4.1-mini': 0.00015,
+  'gpt-4.1': 0.002,
+  // Anthropic
   'claude-3-haiku-20240307': 0.00025,
+  'claude-3-5-haiku-20241022': 0.0008,
   'claude-3-sonnet-20240229': 0.003,
-  'gemini/gemini-2.0-flash-001': 0.00015,
+  'claude-3-5-sonnet-20241022': 0.003,
+  // Google Gemini
+  'gemini-2.5-flash': 0.00015,
+  'gemini-2.5-pro': 0.00125,
+  'gemini-2.0-flash': 0.0001,
+  'gemini-2.0-flash-001': 0.0001,
+  'gemini-2.0-flash-exp': 0.0001,
+  'gemini-1.5-flash': 0.000075,
+  'gemini-1.5-pro': 0.00125,
+  'gemini/gemini-2.0-flash-001': 0.0001,
+  'gemini/gemini-2.5-flash': 0.00015,
+  'gemini/gemini-1.5-flash': 0.000075,
+  // Qwen / Alibaba
+  'qwen-turbo': 0.0001,
+  'qwen-plus': 0.0004,
+  'qwen-max': 0.0016,
 };
 
-/** Preço por 1k tokens do modelo, com fallback conservador para desconhecidos. */
+/** Preço por 1k tokens do modelo, com fallback inteligente para variantes. */
 export function modelCostPer1k(model: string): number {
-  return MODEL_COST_PER_1K[model] ?? 0.001;
+  if (!model) return 0.0005;
+  const normalized = model.toLowerCase().trim();
+
+  // Modelos gratuitos no OpenRouter / APIs
+  if (normalized.endsWith(':free') || normalized.includes('/free') || normalized.includes('free:')) {
+    return 0;
+  }
+
+  // Busca exata na tabela
+  if (MODEL_COST_PER_1K[model] !== undefined) {
+    return MODEL_COST_PER_1K[model];
+  }
+  if (MODEL_COST_PER_1K[normalized] !== undefined) {
+    return MODEL_COST_PER_1K[normalized];
+  }
+
+  // Matching por família de modelos
+  if (normalized.includes('gemini') && normalized.includes('flash')) {
+    return 0.00015;
+  }
+  if (normalized.includes('gemini') && normalized.includes('pro')) {
+    return 0.00125;
+  }
+  if (normalized.includes('deepseek')) {
+    return 0.00027;
+  }
+  if (normalized.includes('mini') || normalized.includes('haiku') || normalized.includes('turbo') || normalized.includes('small')) {
+    return 0.0002;
+  }
+
+  return 0.001;
 }
 const DURATION_CLAMP_TOLERANCE_S = 5;
 
@@ -135,6 +186,7 @@ export interface LlmClipAnalyzerServiceOptions {
   baseURL?: string;
   model?: string;
   logger?: Logger;
+  maxCostUsd?: number;
 }
 
 export interface LlmTelemetry {
@@ -155,6 +207,7 @@ export class LlmClipAnalyzerService {
   private readonly model: string;
   private readonly logger: Logger;
   private readonly client?: OpenAI;
+  private readonly maxCostUsd: number;
   private readonly promptCache = new Map<string, string>();
 
   constructor(options: LlmClipAnalyzerServiceOptions = {}) {
@@ -166,6 +219,9 @@ export class LlmClipAnalyzerService {
 
     this.model = config.model ?? 'deepseek-chat';
     this.logger = options.logger ?? ((message: string) => console.log(message));
+    this.maxCostUsd = typeof options.maxCostUsd === 'number'
+      ? options.maxCostUsd
+      : Number(process.env.LLM_MAX_COST_USD ?? 0.5);
     this.client = this.createClient(config);
   }
 
@@ -249,15 +305,31 @@ export class LlmClipAnalyzerService {
 
     let tokensUsed = 0;
     let failedPasses = 0;
+    let lastProviderError = '';
     const rawCandidates: ClipSuggestion[] = [];
     for (const [index, userPrompt] of userPrompts.entries()) {
       const pass = await this.runAnalysisPass(systemWithProfile, userPrompt, index, userPrompts.length);
       tokensUsed += pass.tokensUsed;
       if (pass.failed) {
         failedPasses += 1;
+        if (pass.error) lastProviderError = pass.error;
         continue;
       }
       rawCandidates.push(...pass.clips);
+    }
+
+    // Toda janela falhou na comunicação com o provider: isso é infraestrutura
+    // quebrada (modelo aposentado, chave sem cota, endpoint errado), não "a IA
+    // não achou nada de bom". Devolver [] aqui faz o chamador cair no fallback
+    // por tempo e entregar dezenas de cortes picotados como se fosse sucesso —
+    // foi exatamente assim que um `gemini-2.5-flash` aposentado passou
+    // despercebido, com as 46 janelas em 404 e o projeto marcado COMPLETED.
+    // Falhar alto deixa a mensagem real do provider visível para quem corrige.
+    if (userPrompts.length > 0 && failedPasses === userPrompts.length) {
+      throw new Error(
+        `O provider de IA falhou em todas as ${userPrompts.length} chamada(s) com o modelo "${this.model}". ` +
+          `Último erro: ${lastProviderError || 'sem detalhes'}`,
+      );
     }
 
     // Janelas com sobreposição podem sugerir o mesmo momento duas vezes.
@@ -364,11 +436,11 @@ export class LlmClipAnalyzerService {
     const projectedCostUsd =
       ((estimatedInputTokens + outputTokens) / 1000) * modelCostPer1k(this.model);
 
-    if (MAX_COST_USD > 0 && projectedCostUsd > MAX_COST_USD) {
+    if (this.maxCostUsd > 0 && projectedCostUsd > this.maxCostUsd) {
       throw new Error(
         `Custo projetado da análise (US$ ${projectedCostUsd.toFixed(4)} em ${userPrompts.length} ` +
-          `chamada(s)) excede o teto LLM_MAX_COST_USD=${MAX_COST_USD}. Use um vídeo mais curto, ` +
-          `um modelo mais barato ou aumente o teto (modelo atual: ${this.model}).`,
+          `chamada(s)) excede o teto LLM_MAX_COST_USD=${this.maxCostUsd}. Use um vídeo mais curto, ` +
+          `um modelo mais barato ou aumente o teto no painel de administração /admin/ai (modelo atual: ${this.model}).`,
       );
     }
 
@@ -384,7 +456,7 @@ export class LlmClipAnalyzerService {
     userPrompt: string,
     index: number,
     total: number,
-  ): Promise<{ clips: ClipSuggestion[]; tokensUsed: number; failed: boolean }> {
+  ): Promise<{ clips: ClipSuggestion[]; tokensUsed: number; failed: boolean; error?: string }> {
     const label = total > 1 ? `janela ${index + 1}/${total}` : 'passada única';
 
     const createCompletion = (jsonMode: boolean) =>
@@ -417,10 +489,9 @@ export class LlmClipAnalyzerService {
       tokensUsed = completion.usage?.total_tokens ?? 0;
       rawContent = completion.choices[0]?.message?.content ?? '';
     } catch (error) {
-      this.logger(
-        `[clip-analyzer] ${label}: chamada ao provider falhou após retries: ${(error as Error).message}`,
-      );
-      return { clips: [], tokensUsed, failed: true };
+      const message = (error as Error).message ?? String(error);
+      this.logger(`[clip-analyzer] ${label}: chamada ao provider falhou após retries: ${message}`);
+      return { clips: [], tokensUsed, failed: true, error: message };
     }
 
     const parsedResponse = this.parseModelResponse(rawContent);
