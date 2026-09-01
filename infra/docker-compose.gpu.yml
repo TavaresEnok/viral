@@ -36,7 +36,14 @@ services:
       REMOTE_ACCEL_BATCH_SIZE: ${REMOTE_ACCEL_BATCH_SIZE:-8}
       # Com o encode saindo da CPU para o NVENC, dá para renderizar mais
       # cortes em paralelo sem competir com o DRAC pela CPU.
-      RENDER_CLIP_CONCURRENCY: ${RENDER_CLIP_CONCURRENCY_GPU:-4}
+      RENDER_CLIP_CONCURRENCY: ${RENDER_CLIP_CONCURRENCY_GPU:-2}
+      # Ajustes do NVENC. Sem repassar aqui, o codigo le process.env e nunca
+      # encontra nada — NVENC_CQ e NVENC_PRESET eram documentados como
+      # ajustaveis mas jamais chegavam ao container.
+      # NVENC_CODEC=h264_nvenc reverte o HEVC sem precisar de rebuild.
+      NVENC_CODEC: ${NVENC_CODEC:-hevc_nvenc}
+      NVENC_PRESET: ${NVENC_PRESET:-p4}
+      NVENC_CQ: ${NVENC_CQ:-}
     depends_on:
       node-agent:
         condition: service_healthy

@@ -177,6 +177,16 @@ describe('GpuCapabilityService', () => {
       expect(args).toEqual(expect.arrayContaining(['-cq', '19']));
     });
 
+    it('trata env vazia como ausente (o compose repassa NVENC_CQ vazio)', async () => {
+      process.env.NVENC_CQ = '';
+      process.env.NVENC_PRESET = '';
+      const service = await newService();
+      const args = service.videoCodecArgs(true, 'veryfast', 2);
+
+      // Sem esse tratamento o ffmpeg receberia `-cq ""` e falharia.
+      expect(args).toEqual(expect.arrayContaining(['-cq', '25', '-preset', 'p4']));
+    });
+
     it('permite voltar para H.264 por env, sem rebuild', async () => {
       process.env.NVENC_CODEC = 'h264_nvenc';
       const service = await newService();

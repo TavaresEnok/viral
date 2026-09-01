@@ -39,7 +39,18 @@ function encoderMode(): "auto" | "cpu" {
  * sonda diria "GPU ok" e todo corte falharia no render.
  */
 function nvencCodec(): string {
-    return process.env.NVENC_CODEC ?? "hevc_nvenc";
+    return envOr("NVENC_CODEC", "hevc_nvenc");
+}
+
+/**
+ * Lê uma variável tratando string vazia como ausente.
+ *
+ * O compose repassa `NVENC_CQ: ${NVENC_CQ:-}`, que chega como "" quando não
+ * definida. Com `??` isso passaria direto e o ffmpeg receberia `-cq ""`.
+ */
+function envOr(name: string, fallback: string): string {
+    const value = process.env[name];
+    return value !== undefined && value.trim() !== "" ? value : fallback;
 }
 
 /**
@@ -143,11 +154,11 @@ export class GpuCapabilityService {
             const isHevc = codec.startsWith("hevc");
             return [
                 "-c:v", codec,
-                "-preset", process.env.NVENC_PRESET ?? "p4",
+                "-preset", envOr("NVENC_PRESET", "p4"),
                 "-tune", "hq",
                 "-rc", "vbr",
                 // HEVC entrega a mesma qualidade percebida num CQ mais alto.
-                "-cq", process.env.NVENC_CQ ?? (isHevc ? "25" : "23"),
+                "-cq", envOr("NVENC_CQ", isHevc ? "25" : "23"),
                 // Em modo CQ puro o bitrate alvo precisa ficar livre.
                 "-b:v", "0",
                 // MP4 aceita duas marcacoes para HEVC: `hev1` (padrao do ffmpeg)
