@@ -32,14 +32,33 @@ function encoderMode(): "auto" | "cpu" {
 }
 
 /**
- * Encoder NVENC usado tanto pela sonda quanto pelo render.
+ * Encoders NVENC a tentar, do melhor para o mais compatível.
  *
- * Precisa ser o mesmo nos dois lugares: sondar `h264_nvenc` e depois encodar em
- * `hevc_nvenc` deixaria passar uma placa que suporta H.264 mas nao HEVC — a
- * sonda diria "GPU ok" e todo corte falharia no render.
+ * Medido nesta placa (RTX 5060 Ti), mesmo corte, contra referência sem perdas:
+ *   av1_nvenc  cq31 -> 2,58 MB  SSIM 0,990859
+ *   hevc_nvenc cq25 -> 2,96 MB  SSIM 0,990709
+ *   h264_nvenc cq23 -> 4,98 MB  SSIM 0,991351
+ * AV1 entrega qualidade igual ou melhor que HEVC em 13% menos bytes, no mesmo
+ * tempo de encode — e ainda toca nativamente em Chrome e Firefox, onde o HEVC
+ * depende de decode por hardware.
+ *
+ * A ordem importa porque `av1_nvenc` só existe em placas Ada (RTX 40) ou mais
+ * novas: numa RTX 30 a primeira sonda falha e a segunda pega. Sem essa cadeia,
+ * uma placa mais antiga cairia direto para a CPU mesmo sabendo fazer HEVC.
+ *
+ * NVENC_CODEC explícito desliga a cadeia e respeita a escolha do operador.
  */
-function nvencCodec(): string {
-    return envOr("NVENC_CODEC", "hevc_nvenc");
+function nvencCandidates(): string[] {
+    const explicit = process.env.NVENC_CODEC?.trim();
+    if (explicit) return [explicit];
+    return ["av1_nvenc", "hevc_nvenc", "h264_nvenc"];
+}
+
+/** `-cq` padrão de cada família, calibrado para a mesma qualidade percebida. */
+function defaultCq(codec: string): string {
+    if (codec.startsWith("av1")) return "31";
+    if (codec.startsWith("hevc")) return "25";
+    return "23";
 }
 
 /**
@@ -76,6 +95,8 @@ export class GpuCapabilityService {
     private inFlight?: Promise<boolean>;
     /** Último resultado CONHECIDO e o instante em que foi obtido. */
     private lastResult?: { available: boolean; at: number };
+    /** Codec que passou na sonda; o render precisa usar exatamente este. */
+    private resolvedCodec?: string;
 
     /**
      * true quando o encode por GPU foi verificado e funciona.
@@ -100,40 +121,44 @@ export class GpuCapabilityService {
     }
 
     private async runProbe(): Promise<boolean> {
-        try {
-            // Gera 1 frame sintético e tenta encodar descartando a saída.
-            // Não toca em disco nem depende de nenhum arquivo de entrada.
-            await execFileAsync(
-                "ffmpeg",
-                [
-                    "-hide_banner",
-                    "-loglevel", "error",
-                    "-f", "lavfi",
-                    "-i", "color=c=black:s=256x256:d=0.1",
-                    "-c:v", nvencCodec(),
-                    "-frames:v", "1",
-                    "-f", "null",
-                    "-",
-                ],
-                { timeout: PROBE_TIMEOUT_MS },
-            );
-            this.logger.log({
-                msg: "GPU detectada: encode por NVENC habilitado (h264_nvenc)",
-                encoder: "h264_nvenc",
-            });
-            this.lastResult = { available: true, at: Date.now() };
-            return true;
-        } catch (error) {
-            const detail = error instanceof Error ? error.message : String(error);
-            this.logger.log({
-                msg: `GPU indisponível; encode seguirá em CPU (libx264) — nova tentativa em até ${Math.round(retryCooldownMs() / 1000)}s`,
-                encoder: "libx264",
-                // Sem placa isso é esperado, não é erro — fica em log normal.
-                detail: detail.split("\n").filter(Boolean).slice(-1)[0] ?? detail,
-            });
-            this.lastResult = { available: false, at: Date.now() };
-            return false;
+        const failures: string[] = [];
+        for (const codec of nvencCandidates()) {
+            try {
+                // Gera 1 frame sintético e tenta encodar descartando a saída.
+                // Não toca em disco nem depende de nenhum arquivo de entrada.
+                await execFileAsync(
+                    "ffmpeg",
+                    [
+                        "-hide_banner",
+                        "-loglevel", "error",
+                        "-f", "lavfi",
+                        "-i", "color=c=black:s=256x256:d=0.1",
+                        "-c:v", codec,
+                        "-frames:v", "1",
+                        "-f", "null",
+                        "-",
+                    ],
+                    { timeout: PROBE_TIMEOUT_MS },
+                );
+                this.resolvedCodec = codec;
+                this.logger.log({ msg: `GPU detectada: encode por NVENC habilitado (${codec})`, encoder: codec });
+                this.lastResult = { available: true, at: Date.now() };
+                return true;
+            } catch (error) {
+                const detail = error instanceof Error ? error.message : String(error);
+                failures.push(`${codec}: ${detail.split("\n").filter(Boolean).slice(-1)[0] ?? detail}`);
+            }
         }
+
+        this.resolvedCodec = undefined;
+        this.logger.log({
+            msg: `GPU indisponível; encode seguirá em CPU (libx264) — nova tentativa em até ${Math.round(retryCooldownMs() / 1000)}s`,
+            encoder: "libx264",
+            // Sem placa isso é esperado, não é erro — fica em log normal.
+            detail: failures.join(" | "),
+        });
+        this.lastResult = { available: false, at: Date.now() };
+        return false;
     }
 
     /**
@@ -150,7 +175,8 @@ export class GpuCapabilityService {
             // 16,3MB) — o encode ja esta no NVENC, entao a economia sai de graca.
             // NVENC_CODEC=h264_nvenc reverte sem rebuild se algum destino de
             // publicacao recusar HEVC.
-            const codec = nvencCodec();
+            // O codec que a sonda aprovou; antes dela, o primeiro da cadeia.
+            const codec = this.resolvedCodec ?? nvencCandidates()[0];
             const isHevc = codec.startsWith("hevc");
             return [
                 "-c:v", codec,
@@ -158,7 +184,7 @@ export class GpuCapabilityService {
                 "-tune", "hq",
                 "-rc", "vbr",
                 // HEVC entrega a mesma qualidade percebida num CQ mais alto.
-                "-cq", envOr("NVENC_CQ", isHevc ? "25" : "23"),
+                "-cq", envOr("NVENC_CQ", defaultCq(codec)),
                 // Em modo CQ puro o bitrate alvo precisa ficar livre.
                 "-b:v", "0",
                 // MP4 aceita duas marcacoes para HEVC: `hev1` (padrao do ffmpeg)

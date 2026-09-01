@@ -34,6 +34,8 @@ describe('GpuCapabilityService', () => {
   afterEach(() => {
     delete process.env.VIDEO_ENCODER;
     delete process.env.NVENC_CQ;
+    delete process.env.NVENC_CODEC;
+    delete process.env.NVENC_PRESET;
   });
 
   describe('detecção', () => {
@@ -56,7 +58,7 @@ describe('GpuCapabilityService', () => {
 
       const [cmd, args] = mockExecFile.mock.calls[0];
       expect(cmd).toBe('ffmpeg');
-      expect(args).toContain('hevc_nvenc');
+      expect(args).toContain('av1_nvenc');
       // Descarta a saída: a sonda não pode escrever arquivo nenhum.
       expect(args).toContain('-f');
       expect(args).toContain('null');
@@ -99,7 +101,9 @@ describe('GpuCapabilityService', () => {
       vi.advanceTimersByTime(30_000); // metade do cooldown
       await expect(service.isNvencAvailable()).resolves.toBe(false);
 
-      expect(mockExecFile).toHaveBeenCalledTimes(1);
+      // Uma sonda = a cadeia inteira (av1 -> hevc -> h264). A segunda chamada
+      // nao pode ter disparado nenhuma outra.
+      expect(mockExecFile).toHaveBeenCalledTimes(3);
     });
 
     it('sonda de novo sozinho depois do cooldown — sem isso, um handle de GPU perdido travava o worker em CPU até restart manual', async () => {
@@ -112,7 +116,8 @@ describe('GpuCapabilityService', () => {
       okEncode(); // a GPU "voltou a responder" (o caso real de produção)
 
       await expect(service.isNvencAvailable()).resolves.toBe(true);
-      expect(mockExecFile).toHaveBeenCalledTimes(2);
+      // 3 da cadeia que falhou + 1 do av1 que passou na nova tentativa.
+      expect(mockExecFile).toHaveBeenCalledTimes(4);
     });
 
     it('sucesso não expira nunca, mesmo bem depois do cooldown de falha', async () => {
@@ -149,9 +154,9 @@ describe('GpuCapabilityService', () => {
       const service = await newService();
       const args = service.videoCodecArgs(true, 'veryfast', 2);
 
-      expect(args).toEqual(expect.arrayContaining(['-c:v', 'hevc_nvenc', '-cq', '25']));
-      // Sem `hvc1` o arquivo abre preto no QuickTime/Safari/iOS.
-      expect(args).toEqual(expect.arrayContaining(['-tag:v', 'hvc1']));
+      expect(args).toEqual(expect.arrayContaining(['-c:v', 'av1_nvenc', '-cq', '31']));
+      // `hvc1` é marcação de HEVC; em AV1 o container já usa `av01`.
+      expect(args).not.toContain('-tag:v');
       // NVENC não entende -crf nem os presets do x264.
       expect(args).not.toContain('-crf');
       expect(args).not.toContain('veryfast');
@@ -164,6 +169,7 @@ describe('GpuCapabilityService', () => {
       expect(args).toEqual(
         expect.arrayContaining(['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-threads', '3']),
       );
+      expect(args).not.toContain('av1_nvenc');
       expect(args).not.toContain('hevc_nvenc');
       expect(args).not.toContain('h264_nvenc');
       // H.264 de propósito no fallback: x265 por software travaria o render.
@@ -184,7 +190,31 @@ describe('GpuCapabilityService', () => {
       const args = service.videoCodecArgs(true, 'veryfast', 2);
 
       // Sem esse tratamento o ffmpeg receberia `-cq ""` e falharia.
-      expect(args).toEqual(expect.arrayContaining(['-cq', '25', '-preset', 'p4']));
+      expect(args).toEqual(expect.arrayContaining(['-cq', '31', '-preset', 'p4']));
+    });
+
+    it('usa o codec que passou na sonda, não o primeiro da lista', async () => {
+      // Placa antiga (RTX 30): av1_nvenc não existe, hevc_nvenc sim.
+      mockExecFile.mockImplementation(
+        (_cmd: string, args: string[], _opts: unknown, cb: Function) =>
+          args.includes('av1_nvenc')
+            ? cb(new Error('Cannot load av1 encoder'), '', '')
+            : cb(null, '', ''),
+      );
+      const service = await newService();
+      await expect(service.isNvencAvailable()).resolves.toBe(true);
+
+      const args = service.videoCodecArgs(true, 'veryfast', 2);
+      // Sem isso o render pediria AV1 numa placa que acabou de recusá-lo.
+      expect(args).toEqual(expect.arrayContaining(['-c:v', 'hevc_nvenc', '-cq', '25', '-tag:v', 'hvc1']));
+    });
+
+    it('só desiste da GPU quando toda a cadeia de codecs falha', async () => {
+      failEncode();
+      const service = await newService();
+      await expect(service.isNvencAvailable()).resolves.toBe(false);
+      // av1 -> hevc -> h264, três tentativas antes de cair para CPU.
+      expect(mockExecFile.mock.calls.length).toBe(3);
     });
 
     it('permite voltar para H.264 por env, sem rebuild', async () => {
