@@ -1,4 +1,4 @@
-FROM node:20-bookworm-slim AS builder
+FROM node:22-trixie-slim AS builder
 RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 RUN apt-get update && apt-get install -y cmake g++ libopencv-dev wget python3 python3-pip && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
@@ -25,22 +25,26 @@ RUN pnpm --filter @viralforge/render-engine build
 RUN pnpm --filter @viralforge/face-engine build
 RUN pnpm --filter @viralforge/worker build
 
-FROM node:20-bookworm-slim AS runner
+FROM node:22-trixie-slim AS runner
 RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 # ffmpeg + OpenCV = engine de render PADRAO (FFmpeg + face-engine).
 # Aqui vao apenas as libs de RUNTIME que o binario face_engine realmente linka
 # (verificado com ldd) — libopencv-dev traria headers e todos os modulos, ~1GB
-# desnecessario numa imagem de execucao. Sufixo 406 = OpenCV 4.6 do bookworm.
+# desnecessario numa imagem de execucao. Sufixo 410 = OpenCV 4.10 do trixie
+# (era 406/OpenCV 4.6 no bookworm; o sufixo acompanha a versao do Debian).
 # chromium = engine OPCIONAL Remotion (RENDER_ENGINE=remotion), usado via
 # REMOTION_BROWSER_EXECUTABLE para nao depender de download em runtime.
 # O chromium responde por ~1GB da imagem e SÓ é usado pelo engine opcional
 # Remotion. Quem roda apenas o engine padrão (FFmpeg) pode economizar com
 # --build-arg INSTALL_CHROMIUM=false.
+# Base trixie (Debian 13): traz ffmpeg 7.1 no lugar do 5.1 e libvulkan 1.4
+# no lugar do 1.3.239 — o loader antigo rejeitava em silencio o ICD da NVIDIA
+# (que declara API 1.4) e caia no llvmpipe, renderizando por software na CPU.
 ARG INSTALL_CHROMIUM=true
 RUN apt-get update && apt-get install -y \
       ffmpeg python3 wget \
-      libopencv-core406 libopencv-dnn406 libopencv-imgcodecs406 \
-      libopencv-imgproc406 libopencv-videoio406 \
+      libopencv-core410 libopencv-dnn410 libopencv-imgcodecs410 \
+      libopencv-imgproc410 libopencv-videoio410 \
     && if [ "$INSTALL_CHROMIUM" = "true" ]; then apt-get install -y chromium; fi \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app

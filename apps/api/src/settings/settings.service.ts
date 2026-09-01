@@ -118,7 +118,18 @@ const llmProviderCatalog = [
     provider: 'google',
     label: 'Google Gemini',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    models: ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'],
+    models: [
+      // Verificados por chamada real contra a API do Gemini em 01/09/2026.
+      // A familia 2.5/2.0/1.5 responde 404 "no longer available to new users",
+      // e os modelos *-pro respondem 429 no free tier — o catalogo antigo so
+      // listava esses, entao qualquer escolha do dropdown quebrava a analise.
+      'gemini-3.1-flash-lite',
+      'gemini-3.6-flash',
+      'gemini-3.7-flash',
+      'gemini-3.5-flash-lite',
+      'gemini-flash-latest',
+      'gemini-flash-lite-latest',
+    ],
   },
 ];
 

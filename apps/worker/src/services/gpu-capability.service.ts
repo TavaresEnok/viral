@@ -32,9 +32,20 @@ function encoderMode(): "auto" | "cpu" {
 }
 
 /**
+ * Encoder NVENC usado tanto pela sonda quanto pelo render.
+ *
+ * Precisa ser o mesmo nos dois lugares: sondar `h264_nvenc` e depois encodar em
+ * `hevc_nvenc` deixaria passar uma placa que suporta H.264 mas nao HEVC — a
+ * sonda diria "GPU ok" e todo corte falharia no render.
+ */
+function nvencCodec(): string {
+    return process.env.NVENC_CODEC ?? "hevc_nvenc";
+}
+
+/**
  * Descobre, em tempo de execução, se dá para encodar na GPU (NVENC).
  *
- * A detecção NÃO se contenta com `ffmpeg -encoders` listando h264_nvenc: o
+ * A detecção NÃO se contenta com `ffmpeg -encoders` listando o encoder: o
  * binário do Debian lista o encoder mesmo em máquina sem placa nenhuma. Só um
  * encode de teste de verdade prova que driver + placa + container estão ok.
  *
@@ -88,7 +99,7 @@ export class GpuCapabilityService {
                     "-loglevel", "error",
                     "-f", "lavfi",
                     "-i", "color=c=black:s=256x256:d=0.1",
-                    "-c:v", "h264_nvenc",
+                    "-c:v", nvencCodec(),
                     "-frames:v", "1",
                     "-f", "null",
                     "-",
@@ -123,16 +134,32 @@ export class GpuCapabilityService {
      */
     videoCodecArgs(useGpu: boolean, cpuPreset: string, threads: number): string[] {
         if (useGpu) {
+            // HEVC por padrao: medido no mesmo corte de 30s, gasta o mesmo tempo
+            // do H.264 (5,9s contra 6,0s) e gera metade do arquivo (8,9MB contra
+            // 16,3MB) — o encode ja esta no NVENC, entao a economia sai de graca.
+            // NVENC_CODEC=h264_nvenc reverte sem rebuild se algum destino de
+            // publicacao recusar HEVC.
+            const codec = nvencCodec();
+            const isHevc = codec.startsWith("hevc");
             return [
-                "-c:v", "h264_nvenc",
+                "-c:v", codec,
                 "-preset", process.env.NVENC_PRESET ?? "p4",
                 "-tune", "hq",
                 "-rc", "vbr",
-                "-cq", process.env.NVENC_CQ ?? "23",
+                // HEVC entrega a mesma qualidade percebida num CQ mais alto.
+                "-cq", process.env.NVENC_CQ ?? (isHevc ? "25" : "23"),
                 // Em modo CQ puro o bitrate alvo precisa ficar livre.
                 "-b:v", "0",
+                // MP4 aceita duas marcacoes para HEVC: `hev1` (padrao do ffmpeg)
+                // e `hvc1`. QuickTime, Safari e o iOS so tocam `hvc1` — sem esta
+                // tag o arquivo abre preto no ecossistema Apple.
+                ...(isHevc ? ["-tag:v", "hvc1"] : []),
             ];
         }
+        // O fallback de CPU segue em H.264 de proposito: o x265 por software e
+        // ordens de grandeza mais lento que o x264, e este caminho so roda quando
+        // a GPU ja falhou — trocar o codec aqui transformaria uma degradacao em
+        // travamento.
         return [
             "-c:v", "libx264",
             "-preset", cpuPreset,

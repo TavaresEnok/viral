@@ -56,7 +56,7 @@ describe('GpuCapabilityService', () => {
 
       const [cmd, args] = mockExecFile.mock.calls[0];
       expect(cmd).toBe('ffmpeg');
-      expect(args).toContain('h264_nvenc');
+      expect(args).toContain('hevc_nvenc');
       // Descarta a saída: a sonda não pode escrever arquivo nenhum.
       expect(args).toContain('-f');
       expect(args).toContain('null');
@@ -149,7 +149,9 @@ describe('GpuCapabilityService', () => {
       const service = await newService();
       const args = service.videoCodecArgs(true, 'veryfast', 2);
 
-      expect(args).toEqual(expect.arrayContaining(['-c:v', 'h264_nvenc', '-cq', '23']));
+      expect(args).toEqual(expect.arrayContaining(['-c:v', 'hevc_nvenc', '-cq', '25']));
+      // Sem `hvc1` o arquivo abre preto no QuickTime/Safari/iOS.
+      expect(args).toEqual(expect.arrayContaining(['-tag:v', 'hvc1']));
       // NVENC não entende -crf nem os presets do x264.
       expect(args).not.toContain('-crf');
       expect(args).not.toContain('veryfast');
@@ -162,7 +164,10 @@ describe('GpuCapabilityService', () => {
       expect(args).toEqual(
         expect.arrayContaining(['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-threads', '3']),
       );
+      expect(args).not.toContain('hevc_nvenc');
       expect(args).not.toContain('h264_nvenc');
+      // H.264 de propósito no fallback: x265 por software travaria o render.
+      expect(args).not.toContain('-tag:v');
     });
 
     it('permite ajustar a qualidade do NVENC por env', async () => {
@@ -170,6 +175,16 @@ describe('GpuCapabilityService', () => {
       const service = await newService();
       const args = service.videoCodecArgs(true, 'veryfast', 2);
       expect(args).toEqual(expect.arrayContaining(['-cq', '19']));
+    });
+
+    it('permite voltar para H.264 por env, sem rebuild', async () => {
+      process.env.NVENC_CODEC = 'h264_nvenc';
+      const service = await newService();
+      const args = service.videoCodecArgs(true, 'veryfast', 2);
+
+      expect(args).toEqual(expect.arrayContaining(['-c:v', 'h264_nvenc', '-cq', '23']));
+      // `hvc1` é marcação de HEVC; em H.264 não pode aparecer.
+      expect(args).not.toContain('-tag:v');
     });
   });
 });
