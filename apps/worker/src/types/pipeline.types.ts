@@ -106,27 +106,31 @@ export function aiFallbackAllowed(env: NodeJS.ProcessEnv = process.env): boolean
     return (env.ALLOW_AI_FALLBACK ?? "true").trim().toLowerCase() !== "false";
 }
 
-export const CLIP_TARGET_FLOOR = 5;
-export const CLIP_TARGET_CEIL = 20;
-/** ~1 corte a cada 3,5 min. */
-export const CLIP_SECONDS_PER_CLIP = 210;
+/** Alinhado ao teto de 30 cortes do LlmClipAnalyzerService e do schema de resposta da IA. */
+export const CLIP_TARGET_CEIL = 30;
 
 /**
- * Alvo dinâmico de cortes por vídeo. Concorrentes (Opus Clip, Vizard) escalam
- * o número de cortes com a duração — o ClipAI era travado em 5 pra qualquer
- * vídeo. Mantém piso de {@link CLIP_TARGET_FLOOR} (sem regressão em vídeos
- * curtos) e escala até {@link CLIP_TARGET_CEIL}. Quando informado, limita pelo
- * saldo de renders do usuário pra não gerar mais do que a cota permite (evita
- * gerar 20 e falhar no gate de quota depois).
+ * Quantos cortes pedir à IA / aceitar após validação.
+ *
+ * Não escala mais pra baixo pela duração do vídeo — um vídeo de 10 min com
+ * conteúdo denso pode ter tantos cortes bons quanto um de 2h, e travar o
+ * teto em função da duração descartava cortes que já bateram o piso de
+ * score (75) só porque o vídeo era curto. Quem decide a quantidade final de
+ * verdade é o filtro de score em video-processor.service.ts e a validação
+ * estrutural em clip-validation.service.ts (duração 15-90s, dedup por
+ * sobreposição/similaridade) — não um teto artificial por minutagem.
+ *
+ * Os dois únicos limites reais que sobram: o teto absoluto de
+ * {@link CLIP_TARGET_CEIL} (o próprio schema da resposta da IA já capa em
+ * 30) e o saldo de renders do usuário, pra não gerar mais cortes do que a
+ * cota permite (evita gerar 30 e falhar no gate de quota depois).
+ *
+ * `durationSeconds` fica na assinatura por compatibilidade com os
+ * call-sites existentes, mas não influencia mais o resultado.
  */
-export function computeClipTarget(durationSeconds: number, remainingRenders?: number): number {
-    const safeDuration = Number.isFinite(durationSeconds) && durationSeconds > 0 ? durationSeconds : 0;
-    const byDuration = Math.max(
-        CLIP_TARGET_FLOOR,
-        Math.min(CLIP_TARGET_CEIL, Math.round(safeDuration / CLIP_SECONDS_PER_CLIP)),
-    );
+export function computeClipTarget(_durationSeconds: number, remainingRenders?: number): number {
     if (typeof remainingRenders === "number" && remainingRenders > 0) {
-        return Math.max(1, Math.min(byDuration, remainingRenders));
+        return Math.max(1, Math.min(CLIP_TARGET_CEIL, remainingRenders));
     }
-    return byDuration;
+    return CLIP_TARGET_CEIL;
 }

@@ -145,9 +145,9 @@ export class VideoProcessorService {
                 );
             }
 
-            // Alvo dinâmico de cortes: escala com a duração do vídeo (como Opus
-            // Clip/Vizard) em vez do antigo fixo 5, sem ultrapassar o saldo de
-            // renders do usuário.
+            // Teto de cortes: não escala mais pela duração do vídeo — quem decide
+            // quantos cortes saem é o filtro de score (>=75) mais adiante, não a
+            // minutagem. Só limita pelo saldo de renders do usuário.
             const remainingRenders = Math.max(
                 0,
                 (durationUserQuota ? durationUserQuota.maxRendersPerMonth : 20) -
@@ -273,12 +273,12 @@ export class VideoProcessorService {
             rawClipCountForMetrics = rawClips.length;
 
             let validatedClips = this.metrics.measureSync(stageTimings, "validate_clips_sec", () =>
-                this.validation.validate(rawClips, transcriptWithWords, duration!, 70, clipTarget),
+                this.validation.validate(rawClips, transcriptWithWords, duration!, 75, clipTarget),
             );
 
             if (!validatedClips.length && rawClips.length > 0) {
                 log(
-                    `Nenhum corte da IA bateu o piso de score; usando os ${rawClips.length} melhores cortes da IA.`,
+                    `Nenhum corte da IA bateu o piso de score (75); usando os ${rawClips.length} melhores cortes da IA mesmo assim.`,
                     { stage: "ANALYZING_CLIPS", rawClipCount: rawClips.length },
                 );
                 validatedClips = this.metrics.measureSync(

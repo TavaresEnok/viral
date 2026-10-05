@@ -242,8 +242,9 @@ export class LlmClipAnalyzerService {
   }
 
   async analyzeTranscript(input: AnalyzeTranscriptInput): Promise<{ clips: ClipSuggestion[]; telemetry: LlmTelemetry }> {
-    // Teto de 30 (alvo dinâmico vem do worker, ~1 corte/3,5min até 20). Era
-    // travado em 5, o que perdia feio pra Opus Clip/Vizard em vídeos longos.
+    // Teto de 30, independente da duração do vídeo — quem decide quantos
+    // cortes sobrevivem de verdade é o filtro de score (>=75) no worker, não
+    // um alvo pré-calculado pela minutagem.
     const maxClips = Math.max(1, Math.min(input.maxClips ?? 5, 30));
 
     if (!input.transcript.segments.length) {

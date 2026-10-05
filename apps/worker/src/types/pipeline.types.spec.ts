@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aiFallbackAllowed, computeClipTarget, CLIP_TARGET_FLOOR, CLIP_TARGET_CEIL } from './pipeline.types.js';
+import { aiFallbackAllowed, computeClipTarget, CLIP_TARGET_CEIL } from './pipeline.types.js';
 
 describe('aiFallbackAllowed', () => {
   it('permite fallback por padrão (env ausente)', () => {
@@ -18,34 +18,30 @@ describe('aiFallbackAllowed', () => {
 });
 
 describe('computeClipTarget', () => {
-  it('mantém piso de 5 em vídeos curtos (sem regressão)', () => {
-    expect(computeClipTarget(60)).toBe(CLIP_TARGET_FLOOR); // 1 min
-    expect(computeClipTarget(300)).toBe(CLIP_TARGET_FLOOR); // 5 min
-    expect(computeClipTarget(600)).toBe(CLIP_TARGET_FLOOR); // 10 min
-  });
-
-  it('escala com a duração em vídeos médios/longos', () => {
-    expect(computeClipTarget(1800)).toBe(9); // 30 min → round(8.57)
-    expect(computeClipTarget(3600)).toBe(17); // 60 min → round(17.1)
-  });
-
-  it('não passa do teto de 20 em vídeos muito longos', () => {
-    expect(computeClipTarget(5400)).toBe(CLIP_TARGET_CEIL); // 90 min
-    expect(computeClipTarget(36000)).toBe(CLIP_TARGET_CEIL); // 10 h
+  it('não escala mais pela duração — pede o teto cheio independente da minutagem', () => {
+    // Um vídeo de 10 min denso pode ter tantos cortes bons quanto um de 2h;
+    // quem filtra por quantidade de verdade é o score (>=75) na validação,
+    // não a duração do vídeo.
+    expect(computeClipTarget(60)).toBe(CLIP_TARGET_CEIL); // 1 min
+    expect(computeClipTarget(600)).toBe(CLIP_TARGET_CEIL); // 10 min
+    expect(computeClipTarget(1200)).toBe(CLIP_TARGET_CEIL); // 20 min
+    expect(computeClipTarget(3600)).toBe(CLIP_TARGET_CEIL); // 1h
+    expect(computeClipTarget(36000)).toBe(CLIP_TARGET_CEIL); // 10h
   });
 
   it('limita pelo saldo de renders quando informado', () => {
-    expect(computeClipTarget(3600, 3)).toBe(3); // byDuration 17, mas só 3 de saldo
-    expect(computeClipTarget(3600, 50)).toBe(17); // saldo folgado → byDuration
+    expect(computeClipTarget(3600, 3)).toBe(3); // teto 30, mas só 3 de saldo
+    expect(computeClipTarget(600, 8)).toBe(8); // vídeo curto, saldo de 8 -> 8
+    expect(computeClipTarget(3600, 50)).toBe(CLIP_TARGET_CEIL); // saldo folgado -> teto
   });
 
-  it('ignora saldo zero/negativo e deixa o gate de quota tratar depois', () => {
-    expect(computeClipTarget(3600, 0)).toBe(17);
-    expect(computeClipTarget(3600, -5)).toBe(17);
+  it('ignora saldo zero/negativo e devolve o teto cheio (gate de quota trata depois)', () => {
+    expect(computeClipTarget(3600, 0)).toBe(CLIP_TARGET_CEIL);
+    expect(computeClipTarget(3600, -5)).toBe(CLIP_TARGET_CEIL);
   });
 
-  it('lida com duração inválida (0/NaN) caindo no piso', () => {
-    expect(computeClipTarget(0)).toBe(CLIP_TARGET_FLOOR);
-    expect(computeClipTarget(Number.NaN)).toBe(CLIP_TARGET_FLOOR);
+  it('lida com duração inválida (0/NaN) sem quebrar — duração não influencia mais o resultado', () => {
+    expect(computeClipTarget(0)).toBe(CLIP_TARGET_CEIL);
+    expect(computeClipTarget(Number.NaN)).toBe(CLIP_TARGET_CEIL);
   });
 });
